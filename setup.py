@@ -26,6 +26,10 @@ import numpy as np
 
 from setuptools.extension import Extension
 from setuptools.command.build_ext import build_ext as BuildExt
+from distutils.spawn import find_executable
+
+
+CMAKE = find_executable('cmake') or find_executable('cmake3')
 
 
 class CMakeExtension(Extension, object):
@@ -63,9 +67,9 @@ class BuildExtension(BuildExt):
             "-DCMAKE_CXX_FLAGS='-Wall -Werror -march=native'",
         ]
         os.chdir(str(build_temp))
-        self.spawn(["cmake", str(os.path.join(cwd, ext.name))] + cmake_args)
+        self.spawn([CMAKE, str(os.path.join(cwd, ext.name))] + cmake_args)
         if not self._dry_run:
-            self.spawn(["cmake", "--build", "."])
+            self.spawn([CMAKE, "--build", "."])
         os.chdir(str(cwd))
 
 
@@ -301,7 +305,8 @@ def setup_package():
     my_ext_modules.extend(cythonize(cython_ext_modules, include_path=my_include_dirs, gdb_debug=gdb_debug, compiler_directives={"language_level": 3}))
 
     needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)
-    pytest_runner = ['pytest-runner'] if needs_pytest else []
+    maybe_pytest_runner = ['pytest-runner'] if needs_pytest else []
+    maybe_cmake = ['cmake'] if not CMAKE else []
 
     #########################################################
     # Call setup()
@@ -350,7 +355,7 @@ def setup_package():
         # See
         #    http://setuptools.readthedocs.io/en/latest/setuptools.html
         #
-        setup_requires=["cython", "numpy", "scikit-learn"] + pytest_runner,
+        setup_requires=["cython", "numpy", "scikit-learn"] + maybe_pytest_runner + maybe_cmake,
         tests_require=["pytest"],
         install_requires=["numpy", "scikit-learn"],
         provides=["setup_template_cython"],
