@@ -1,10 +1,9 @@
 # coding: utf-8
-import numpy as np
 
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.utils.validation import (check_X_y, check_array, check_is_fitted,
-    column_or_1d)
-from sklearn.utils.multiclass import unique_labels, check_classification_targets
+from sklearn.utils.validation import (
+    check_X_y, check_array, check_is_fitted, column_or_1d)
+from sklearn.utils.multiclass import check_classification_targets
 from sklearn.preprocessing import LabelEncoder
 
 from .base import (
@@ -16,14 +15,15 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
     """Tsetlin Machine Multiclass classifier.
 
     This estimator implements Tsetlin Machine multiclass classifier
-    following the example code from https://github.com/cair/TsetlinMachineCython
+    following the example code from
+    https://github.com/cair/TsetlinMachineCython
     with several speed and logic improvements.
 
     Parameters
     ----------
     number_of_pos_neg_clauses_per_label : int, default=5
-        Number of positive / negative clauses per class. E.g. for N classes this
-        will lead to the model having
+        Number of positive / negative clauses per class. E.g. for N classes
+        this will lead to the model having
         2 * number_of_pos_neg_clauses_per_label * N clauses.
     number_of_states: int, default=100
         Number of integral states associated with a single Tsetlin automaton.
@@ -63,7 +63,8 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
                  n_jobs=-1,
                  verbose=False,
                  random_state=None):
-        self.number_of_pos_neg_clauses_per_label = number_of_pos_neg_clauses_per_label
+        self.number_of_pos_neg_clauses_per_label = \
+            number_of_pos_neg_clauses_per_label
         self.number_of_states = number_of_states
         self.s = s
         self.threshold = threshold
@@ -73,7 +74,6 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.random_state = random_state
-
 
     def fit(self, X, y, n_iter=500):
         """A reference implementation of a fitting function for a classifier.
@@ -97,7 +97,6 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
         check_classification_targets(checked_y)
 
         return self._fit(X, checked_y, classes=checked_y, n_iter=n_iter)
-
 
     def partial_fit(self, X, y, classes=None, n_iter=500):
         """Fit using existing state of the classifier for online-learning.
@@ -129,11 +128,10 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
                 raise ValueError("Number of features in X and"
                                  " fitted array does not match."
                                  " X: {}, fitted: {}".format(
-                                 X.shape[1], self.n_features_))
+                                    X.shape[1], self.n_features_))
             self._partial_fit(X, y, classes=classes, n_iter=n_iter)
 
         return self
-
 
     def _fit(self, X, y, classes, n_iter):
         n_iter = int(n_iter)
@@ -146,9 +144,10 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
         y = encoder.transform(y)
 
         if len(encoder.classes_) < 2:
-            raise ValueError("This estimator needs samples of at least 2 classes"
-                             " in the data, but the data contains only one"
-                             " class: {}".format(encoder.classes_[0]))
+            raise ValueError(
+                "This estimator needs samples of at least 2 classes"
+                " in the data, but the data contains only one"
+                " class: {}".format(encoder.classes_[0]))
 
         self.set_params(**_validate_params(self.get_params()))
 
@@ -160,7 +159,6 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
         self.n_features_ = X.shape[1]
 
         return self
-
 
     def _partial_fit(self, X, y, classes, n_iter):
         n_iter = int(n_iter)
@@ -174,7 +172,6 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
             X, y, self.model_, n_iter)
 
         return self
-
 
     def predict(self, X):
         """A reference implementation of a prediction for a classifier.
@@ -198,12 +195,10 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
 
         return y_hat
 
-
     def predict_proba(self, X):
         X = self._validate_for_predict(X)
         probas = _classifier_predict_proba(X, self.model_, self.threshold)
         return probas
-
 
     def _validate_for_predict(self, X):
         # Check is fit had been called

@@ -42,7 +42,8 @@ class CMakeExtension(Extension, object):
 class BuildExtension(BuildExt):
     def run(self):
         for ext in self.extensions:
-            if hasattr(ext, 'extension_type') and ext.extension_type == 'cmake':
+            if (hasattr(ext, 'extension_type')
+                    and ext.extension_type == 'cmake'):
                 self.cmake(ext)
         super(BuildExtension, self).run()
 
@@ -70,7 +71,9 @@ class BuildExtension(BuildExt):
         os.chdir(str(cwd))
 
 
-def declare_cython_extension(extName, build_type, use_math=False, use_openmp=False, include_dirs=None):
+def declare_cython_extension(extName, build_type,
+                             use_math=False, use_openmp=False,
+                             include_dirs=None):
     """Declare a Cython extension module for setuptools.
 
 Parameters:
@@ -96,11 +99,14 @@ Return value:
     #
     # Customize these as needed.
     #
-    # Note that -O3 may sometimes cause mysterious problems, so we limit ourselves to -O2.
+    # Note that -O3 may sometimes cause mysterious problems,
+    # so we limit ourselves to -O2.
 
     # Modules involving numerical computations
     #
-    extra_compile_args_math_optimized = ['-march=native', '-O2', '-msse', '-msse2', '-mfma', '-mfpmath=sse']
+    extra_compile_args_math_optimized = ['-march=native', '-O2',
+                                         '-msse', '-msse2', '-mfma',
+                                         '-mfpmath=sse']
     extra_compile_args_math_debug = ['-march=native', '-O0', '-g']
     extra_link_args_math_optimized = []
     extra_link_args_math_debug = []
@@ -135,18 +141,19 @@ Return value:
         gdb_debug = True
         print("build configuration selected: debug")
     else:
-        raise ValueError("Unknown build configuration '%s'; valid: 'optimized', 'debug'" % (build_type))
+        raise ValueError("Unknown build configuration '%s'; "
+                         "valid: 'optimized', 'debug'" % (build_type))
 
     extPath = extName.replace(".", os.path.sep) + ".pyx"
 
     if use_math:
         compile_args = list(my_extra_compile_args_math)  # copy
         link_args = list(my_extra_link_args_math)
-        libraries = ["m"]  # link libm; this is a list of library names without the "lib" prefix
+        libraries = ["m"]
     else:
         compile_args = list(my_extra_compile_args_nonmath)
         link_args = list(my_extra_link_args_nonmath)
-        libraries = []  # value if no libraries, see setuptools.extension._Extension
+        libraries = []
 
     # OpenMP
     if use_openmp:
@@ -190,13 +197,19 @@ def collect_datafiles(datadirs, dataexts):
     #
     # Standard documentation to detect (and package if it exists).
     #
-    standard_docs = ["README", "LICENSE", "TODO", "CHANGELOG", "AUTHORS"]  # just the basename without file extension
-    standard_doc_exts = [".md", ".rst", ".txt", ""]  # commonly .md for GitHub projects, but other projects may use .rst or .txt (or even blank).
+    standard_docs = [
+        # just the basename without file extension
+        "README", "LICENSE", "TODO", "CHANGELOG", "AUTHORS"]
+    standard_doc_exts = [
+        # commonly .md for GitHub projects, but other projects may use
+        # .rst or .txt (or even blank).
+        ".md", ".rst", ".txt", ""]
 
     detected_docs = []
     for docname in standard_docs:
         for ext in standard_doc_exts:
-            filename = "".join((docname, ext))  # relative to the directory in which setup.py resides
+            # relative to the directory in which setup.py resides
+            filename = "".join((docname, ext))
             if os.path.isfile(filename):
                 detected_docs.append(filename)
     datafiles.append(('.', detected_docs))
@@ -206,7 +219,8 @@ def collect_datafiles(datadirs, dataexts):
 
 def extract_version(libname):
     # Extract __version__ from the package __init__.py
-    # (since it's not a good idea to actually run __init__.py during the build process).
+    # (since it's not a good idea to actually run __init__.py
+    # during the build process).
     #
     # http://stackoverflow.com/questions/2058802/how-can-i-get-the-version-defined-in-setup-py-setuptools-in-my-package
     #
@@ -220,9 +234,13 @@ def extract_version(libname):
                     version = ast.parse(line).body[0].value.s
                     break
             else:
-                print("WARNING: Version information not found in '%s', using placeholder '%s'" % (init_py_path, version), file=sys.stderr)
+                print("WARNING: Version information not found in '%s', "
+                      "using placeholder '%s'" % (init_py_path, version),
+                      file=sys.stderr)
     except FileNotFoundError:
-        print("WARNING: Could not find file '%s', using placeholder version information '%s'" % (init_py_path, version), file=sys.stderr)
+        print("WARNING: Could not find file '%s', using placeholder "
+              "version information '%s'" % (init_py_path, version),
+              file=sys.stderr)
 
     return version
 
@@ -235,7 +253,8 @@ def setup_package():
 
     # Name of the top-level package of your library.
     #
-    # This is also the top level of its source tree, relative to the top-level project directory setup.py resides in.
+    # This is also the top level of its source tree,
+    # relative to the top-level project directory setup.py resides in.
     #
     libname = "pytsetlini"
 
@@ -252,7 +271,8 @@ def setup_package():
 
     # Set up data files for packaging.
     #
-    # Directories (relative to the top-level directory where setup.py resides) in which to look for data files.
+    # Directories (relative to the top-level directory where
+    # setup.py resides) in which to look for data files.
     datadirs = ("tests",)
 
     # File extensions to be considered as data files. (Literal, no wildcards.)
@@ -274,7 +294,8 @@ def setup_package():
     #     https://github.com/cython/cython/wiki/PackageHierarchy
     #
     # For example: my_include_dirs = [np.get_include()]
-    my_include_dirs = [".", "libtsetlini/lib/include", "libtsetlini/lib/src", np.get_include()]
+    my_include_dirs = [".", "libtsetlini/lib/include", "libtsetlini/lib/src",
+                       np.get_include()]
 
     #########################################################
     # Set up modules
@@ -290,13 +311,17 @@ def setup_package():
     #
     cython_ext_modules = [ext_module_pytsetlini]
 
-    # Call cythonize() explicitly, as recommended in the Cython documentation. See
+    # Call cythonize() explicitly, as recommended in the Cython documentation.
+    # See
     #     http://cython.readthedocs.io/en/latest/src/reference/compilation.html#compiling-with-distutils
     #
-    # This will favor Cython's own handling of '.pyx' sources over that provided by setuptools.
+    # This will favor Cython's own handling of '.pyx' sources over that
+    # provided by setuptools.
     #
-    # Note that my_ext_modules is just a list of Extension objects. We could add any C sources (not coming from Cython modules) here if needed.
-    # cythonize() just performs the Cython-level processing, and returns a list of Extension objects.
+    # Note that my_ext_modules is just a list of Extension objects. We could
+    # add any C sources (not coming from Cython modules) here if needed.
+    # cythonize() just performs the Cython-level processing, and returns
+    # a list of Extension objects.
     #
     try:
         from Cython.Build import cythonize
@@ -305,7 +330,10 @@ def setup_package():
                  "Cython is needed to build the extension modules.")
 
     my_ext_modules = [CMakeExtension(name="libtsetlini")]
-    my_ext_modules.extend(cythonize(cython_ext_modules, include_path=my_include_dirs, gdb_debug=gdb_debug, compiler_directives={"language_level": 3}))
+    my_ext_modules.extend(
+        cythonize(cython_ext_modules, include_path=my_include_dirs,
+                  gdb_debug=gdb_debug,
+                  compiler_directives={"language_level": 3}))
 
     needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)
     maybe_pytest_runner = ['pytest-runner'] if needs_pytest else []
@@ -329,7 +357,8 @@ def setup_package():
 
         license="MIT",
 
-        # free-form text field; http://stackoverflow.com/questions/34994130/what-platforms-argument-to-setup-in-setup-py-does
+        # free-form text field;
+        # http://stackoverflow.com/questions/34994130/what-platforms-argument-to-setup-in-setup-py-does
         platforms=["Linux"],
 
         # See
@@ -337,7 +366,8 @@ def setup_package():
         #
         # for the standard classifiers.
         #
-        # Remember to configure these appropriately for your project, especially license!
+        # Remember to configure these appropriately for your project,
+        # especially license!
         #
         classifiers=[
             "Development Status :: 4 - Beta",
@@ -379,22 +409,29 @@ def setup_package():
         #
         ext_modules=my_ext_modules,
 
-        # Declare packages so that  python -m setup build  will copy .py files (especially __init__.py).
+        # Declare packages so that  python -m setup build  will copy .py files
+        # (especially __init__.py).
         #
-        # This **does not** automatically recurse into subpackages, so they must also be declared.
+        # This **does not** automatically recurse into subpackages,
+        # so they must also be declared.
         #
         packages=["pytsetlini"],
 
-        # Install also Cython headers so that other Cython modules can cimport ours
+        # Install also Cython headers so that other Cython modules
+        # can cimport ours
         #
-        # Fileglobs relative to each package, **does not** automatically recurse into subpackages.
+        # Fileglobs relative to each package, **does not** automatically
+        # recurse into subpackages.
         #
-        # FIXME: force sdist, but sdist only, to keep the .pyx files (this puts them also in the bdist)
+        # FIXME: force sdist, but sdist only, to keep the .pyx files
+        # (this puts them also in the bdist)
         package_data={'pytsetlini': ['*.pxd', '*.pyx']},
 
         # Disable zip_safe, because:
-        #   - Cython won't find .pxd files inside installed .egg, hard to compile libs depending on this one
-        #   - dynamic loader may need to have the library unzipped to a temporary directory anyway (at import time)
+        #   - Cython won't find .pxd files inside installed .egg, hard
+        #     to compile libs depending on this one
+        #   - dynamic loader may need to have the library unzipped to
+        #     a temporary directory anyway (at import time)
         #
         zip_safe=False,
 

@@ -95,6 +95,7 @@ def _classifier_predict(X, js_model):
 def _classifier_predict_proba(X, js_model, threshold):
     X_is_sparse = sp.issparse(X)
 
-    probas = libpytsetlini.classifier_predict_proba(X, X_is_sparse, js_model, threshold)
+    probas = libpytsetlini.classifier_predict_proba(
+        X, X_is_sparse, js_model, threshold)
 
     return probas
