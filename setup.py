@@ -44,16 +44,13 @@ class BuildExtension(BuildExt):
         for ext in self.extensions:
             if hasattr(ext, 'extension_type') and ext.extension_type == 'cmake':
                 self.cmake(ext)
-        #self.cythonize()
         super(BuildExtension, self).run()
 
     def cmake(self, ext):
         import pathlib
-        import sysconfig
 
         cwd = pathlib.Path().absolute()
 
-        #CLIB_DIR = os.path.join(sysconfig.get_path('purelib'), 'PyTsetlini')
         CLIB_DIR = os.path.join(cwd, 'pytsetlini')
         print("CLIB_DIR: ", CLIB_DIR)
 
@@ -103,59 +100,58 @@ Return value:
 
     # Modules involving numerical computations
     #
-    extra_compile_args_math_optimized    = ['-march=native', '-O2', '-msse', '-msse2', '-mfma', '-mfpmath=sse']
-    extra_compile_args_math_debug        = ['-march=native', '-O0', '-g']
-    extra_link_args_math_optimized       = []
-    extra_link_args_math_debug           = []
+    extra_compile_args_math_optimized = ['-march=native', '-O2', '-msse', '-msse2', '-mfma', '-mfpmath=sse']
+    extra_compile_args_math_debug = ['-march=native', '-O0', '-g']
+    extra_link_args_math_optimized = []
+    extra_link_args_math_debug = []
 
     # Modules that do not involve numerical computations
     #
     extra_compile_args_nonmath_optimized = ['-O2']
-    extra_compile_args_nonmath_debug     = ['-O0', '-g']
-    extra_link_args_nonmath_optimized    = []
-    extra_link_args_nonmath_debug        = []
+    extra_compile_args_nonmath_debug = ['-O0', '-g']
+    extra_link_args_nonmath_optimized = []
+    extra_link_args_nonmath_debug = []
 
     # Additional flags to compile/link with OpenMP
     #
     openmp_compile_args = ['-fopenmp']
-    openmp_link_args    = ['-fopenmp']
+    openmp_link_args = ['-fopenmp']
 
     gdb_debug = False
     # Choose the base set of compiler and linker flags.
     #
     if build_type == 'optimized':
-        my_extra_compile_args_math    = extra_compile_args_math_optimized
+        my_extra_compile_args_math = extra_compile_args_math_optimized
         my_extra_compile_args_nonmath = extra_compile_args_nonmath_optimized
-        my_extra_link_args_math       = extra_link_args_math_optimized
-        my_extra_link_args_nonmath    = extra_link_args_nonmath_optimized
+        my_extra_link_args_math = extra_link_args_math_optimized
+        my_extra_link_args_nonmath = extra_link_args_nonmath_optimized
         gdb_debug = False
-        print( "build configuration selected: optimized" )
+        print("build configuration selected: optimized")
     elif build_type == 'debug':
-        my_extra_compile_args_math    = extra_compile_args_math_debug
+        my_extra_compile_args_math = extra_compile_args_math_debug
         my_extra_compile_args_nonmath = extra_compile_args_nonmath_debug
-        my_extra_link_args_math       = extra_link_args_math_debug
-        my_extra_link_args_nonmath    = extra_link_args_nonmath_debug
+        my_extra_link_args_math = extra_link_args_math_debug
+        my_extra_link_args_nonmath = extra_link_args_nonmath_debug
         gdb_debug = True
-        print( "build configuration selected: debug" )
+        print("build configuration selected: debug")
     else:
         raise ValueError("Unknown build configuration '%s'; valid: 'optimized', 'debug'" % (build_type))
-
 
     extPath = extName.replace(".", os.path.sep) + ".pyx"
 
     if use_math:
-        compile_args = list(my_extra_compile_args_math) # copy
-        link_args    = list(my_extra_link_args_math)
-        libraries    = ["m"]  # link libm; this is a list of library names without the "lib" prefix
+        compile_args = list(my_extra_compile_args_math)  # copy
+        link_args = list(my_extra_link_args_math)
+        libraries = ["m"]  # link libm; this is a list of library names without the "lib" prefix
     else:
         compile_args = list(my_extra_compile_args_nonmath)
-        link_args    = list(my_extra_link_args_nonmath)
-        libraries    = []  # value if no libraries, see setuptools.extension._Extension
+        link_args = list(my_extra_link_args_nonmath)
+        libraries = []  # value if no libraries, see setuptools.extension._Extension
 
     # OpenMP
     if use_openmp:
-        compile_args.insert( 0, *openmp_compile_args )
-        link_args.insert( 0, *openmp_link_args )
+        compile_args.insert(0, *openmp_compile_args)
+        link_args.insert(0, *openmp_link_args)
 
     compile_args += ['-std=c++17', '-Wall']
     link_args += ['pytsetlini/libtsetlini_static.a']
@@ -171,7 +167,7 @@ Return value:
                      extra_link_args=link_args,
                      include_dirs=include_dirs,
                      libraries=libraries
-                    ) , gdb_debug
+                     ), gdb_debug
 
 
 def collect_datafiles(datadirs, dataexts):
@@ -180,25 +176,30 @@ def collect_datafiles(datadirs, dataexts):
     # http://stackoverflow.com/questions/13628979/setuptools-how-to-make-package-contain-extra-data-folder-and-all-folders-inside
     #
     datafiles = []
-    getext = lambda filename: os.path.splitext(filename)[1]
+
+    def getext(filename):
+        return os.path.splitext(filename)[1]
+
     for datadir in datadirs:
-        datafiles.extend( [(root, [os.path.join(root, f) for f in files if getext(f) in dataexts])
-                           for root, dirs, files in os.walk(datadir)] )
+        datafiles.extend([
+            (root,
+             [os.path.join(root, f) for f in files if getext(f) in dataexts])
+            for root, dirs, files in os.walk(datadir)])
 
     # Add standard documentation (README et al.), if any, to data files
     #
     # Standard documentation to detect (and package if it exists).
     #
-    standard_docs     = ["README", "LICENSE", "TODO", "CHANGELOG", "AUTHORS"]  # just the basename without file extension
+    standard_docs = ["README", "LICENSE", "TODO", "CHANGELOG", "AUTHORS"]  # just the basename without file extension
     standard_doc_exts = [".md", ".rst", ".txt", ""]  # commonly .md for GitHub projects, but other projects may use .rst or .txt (or even blank).
 
     detected_docs = []
     for docname in standard_docs:
         for ext in standard_doc_exts:
-            filename = "".join( (docname, ext) )  # relative to the directory in which setup.py resides
+            filename = "".join((docname, ext))  # relative to the directory in which setup.py resides
             if os.path.isfile(filename):
                 detected_docs.append(filename)
-    datafiles.append( ('.', detected_docs) )
+    datafiles.append(('.', detected_docs))
 
     return datafiles
 
@@ -219,9 +220,9 @@ def extract_version(libname):
                     version = ast.parse(line).body[0].value.s
                     break
             else:
-                print( "WARNING: Version information not found in '%s', using placeholder '%s'" % (init_py_path, version), file=sys.stderr )
+                print("WARNING: Version information not found in '%s', using placeholder '%s'" % (init_py_path, version), file=sys.stderr)
     except FileNotFoundError:
-        print( "WARNING: Could not find file '%s', using placeholder version information '%s'" % (init_py_path, version), file=sys.stderr )
+        print("WARNING: Could not find file '%s', using placeholder version information '%s'" % (init_py_path, version), file=sys.stderr)
 
     return version
 
@@ -236,15 +237,15 @@ def setup_package():
     #
     # This is also the top level of its source tree, relative to the top-level project directory setup.py resides in.
     #
-    libname="pytsetlini"
+    libname = "pytsetlini"
 
     # Short description for package list on PyPI
     #
-    SHORTDESC="PyTsetlini"
+    SHORTDESC = "PyTsetlini"
 
     # Long description for package homepage on PyPI
     #
-    DESC="""Tsetlin Machine estimators
+    DESC = """Tsetlin Machine estimators
 
     Scikit-learn compatible implementation.
     """
@@ -252,11 +253,11 @@ def setup_package():
     # Set up data files for packaging.
     #
     # Directories (relative to the top-level directory where setup.py resides) in which to look for data files.
-    datadirs  = ("tests",)
+    datadirs = ("tests",)
 
     # File extensions to be considered as data files. (Literal, no wildcards.)
-    dataexts  = (".py",  ".pyx", ".pxd",  ".c", ".cpp", ".h",  ".sh",  ".lyx", ".tex", ".txt", ".pdf")
-
+    dataexts = (".py",  ".pyx", ".pxd",  ".c", ".cpp", ".h",  ".sh",  ".lyx",
+                ".tex", ".txt", ".pdf")
 
     #########################################################
     # Init
@@ -264,7 +265,7 @@ def setup_package():
 
     # check for Python 3.4 or later
     # http://stackoverflow.com/questions/19534896/enforcing-python-version-in-setup-py
-    if sys.version_info < (3,4):
+    if sys.version_info < (3, 4):
         sys.exit('Sorry, Python < 3.4 is not supported')
 
     # Make absolute cimports work.
@@ -275,14 +276,15 @@ def setup_package():
     # For example: my_include_dirs = [np.get_include()]
     my_include_dirs = [".", "libtsetlini/lib/include", "libtsetlini/lib/src", np.get_include()]
 
-
     #########################################################
     # Set up modules
     #########################################################
 
     # declare Cython extension modules here
     #
-    ext_module_pytsetlini, gdb_debug = declare_cython_extension("pytsetlini.libpytsetlini", "optimized", use_math=False, use_openmp=True , include_dirs=my_include_dirs)
+    ext_module_pytsetlini, gdb_debug = declare_cython_extension(
+        "pytsetlini.libpytsetlini", "optimized", use_math=False,
+        use_openmp=True, include_dirs=my_include_dirs)
 
     # this is mainly to allow a manual logical ordering of the declared modules
     #
@@ -299,9 +301,10 @@ def setup_package():
     try:
         from Cython.Build import cythonize
     except ImportError:
-        sys.exit("Cython not found. Cython is needed to build the extension modules.")
+        sys.exit("Cython not found. "
+                 "Cython is needed to build the extension modules.")
 
-    my_ext_modules = [CMakeExtension(name="libtsetlini"),]
+    my_ext_modules = [CMakeExtension(name="libtsetlini")]
     my_ext_modules.extend(cythonize(cython_ext_modules, include_path=my_include_dirs, gdb_debug=gdb_debug, compiler_directives={"language_level": 3}))
 
     needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)
@@ -336,33 +339,35 @@ def setup_package():
         #
         # Remember to configure these appropriately for your project, especially license!
         #
-        classifiers=["Development Status :: 4 - Beta",
-                     "Environment :: Console",
-                     "Intended Audience :: Developers",
-                     "Intended Audience :: Science/Research",
-                     "License :: MIT",
-                     "Operating System :: POSIX :: Linux",
-                     "Programming Language :: Cython",
-                     "Programming Language :: Python",
-                     "Programming Language :: Python :: 3",
-                     "Programming Language :: Python :: 3.4",
-                     "Topic :: Scientific/Engineering",
-                     "Topic :: Scientific/Engineering :: Mathematics",
-                     "Topic :: Software Development :: Libraries",
-                     "Topic :: Software Development :: Libraries :: Python Modules"
-                    ],
+        classifiers=[
+            "Development Status :: 4 - Beta",
+            "Environment :: Console",
+            "Intended Audience :: Developers",
+            "Intended Audience :: Science/Research",
+            "License :: MIT",
+            "Operating System :: POSIX :: Linux",
+            "Programming Language :: Cython",
+            "Programming Language :: Python",
+            "Programming Language :: Python :: 3",
+            "Programming Language :: Python :: 3.4",
+            "Topic :: Scientific/Engineering",
+            "Topic :: Scientific/Engineering :: Mathematics",
+            "Topic :: Software Development :: Libraries",
+            "Topic :: Software Development :: Libraries :: Python Modules"],
 
         # See
         #    http://setuptools.readthedocs.io/en/latest/setuptools.html
         #
-        setup_requires=["cython", "numpy", "scikit-learn"] + maybe_pytest_runner + maybe_cmake,
+        setup_requires=["cython", "numpy", "scikit-learn"] + (
+                        maybe_pytest_runner + maybe_cmake),
         tests_require=["pytest"],
         install_requires=["numpy", "scikit-learn"],
         provides=["setup_template_cython"],
 
         # keywords for PyPI (in case you upload your project)
         #
-        # e.g. the keywords your project uses as topics on GitHub, minus "python" (if there)
+        # e.g. the keywords your project uses as topics on GitHub,
+        # minus "python" (if there)
         #
         keywords=["tsetlin machine learning"],
 
