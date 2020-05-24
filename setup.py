@@ -65,6 +65,12 @@ class BuildExtension(BuildExt):
             "-DCMAKE_CXX_FLAGS='-Wall -Werror -march=native'",
         ]
         os.chdir(str(build_temp))
+
+        global CMAKE
+        if not CMAKE:
+            # update, should be installed through pip dependency by now
+            CMAKE = find_executable('cmake') or find_executable('cmake3')
+
         self.spawn([CMAKE, str(os.path.join(cwd, ext.name))] + cmake_args)
         if not self._dry_run:
             self.spawn([CMAKE, "--build", "."])
