@@ -1,0 +1,21 @@
+language: python
+python:
+  - "3.6"
+  - "3.7"
+  #- "3.8" ## Not yet, errors probably due to too old sklearn
+
+env:
+  global:
+    - CC=gcc-8
+    - CXX=g++-8
+
+install:
+  - travis_retry sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+  - travis_retry sudo apt-get -qq update
+  - travis_retry sudo apt-get -qy install "${CXX}"
+  - pip3 install -r requirements.txt
+
+script:
+  - python3 setup.py build
+  - python3 setup.py pytest
+  - python3 setup.py install

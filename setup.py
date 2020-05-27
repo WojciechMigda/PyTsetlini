@@ -4,7 +4,7 @@
 
 Main setup for the library.
 
-Supports Python 3.4.
+Supports Python 3.6.
 
 Usage as usual with setuptools:
     python setup.py build_ext
@@ -289,10 +289,10 @@ def setup_package():
     # Init
     #########################################################
 
-    # check for Python 3.4 or later
+    # check for Python 3.6 or later
     # http://stackoverflow.com/questions/19534896/enforcing-python-version-in-setup-py
-    if sys.version_info < (3, 4):
-        sys.exit('Sorry, Python < 3.4 is not supported')
+    if sys.version_info < (3, 6):
+        sys.exit('Sorry, Python < 3.6 is not supported')
 
     # Make absolute cimports work.
     #
@@ -385,7 +385,7 @@ def setup_package():
             "Programming Language :: Cython",
             "Programming Language :: Python",
             "Programming Language :: Python :: 3",
-            "Programming Language :: Python :: 3.4",
+            "Programming Language :: Python :: 3.6",
             "Topic :: Scientific/Engineering",
             "Topic :: Scientific/Engineering :: Mathematics",
             "Topic :: Software Development :: Libraries",
