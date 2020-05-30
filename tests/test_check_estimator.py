@@ -11,6 +11,34 @@ def _unpack_bits(a):
     return np.unpackbits(a.astype(np.uint8), axis=1)
 
 
+def check_finite_X_y(X, y):
+    # With this test setup, where we preprocess input
+    # before passing it to the actual estimator,
+    # we lose ability to perform some checks ourselves.
+    # With a newer scikit-learn its check_estimator()
+    # passes input X with NaN and Inf to see if our
+    # estimator will throw, but MinMaxScaler silently
+    # swallows such input. Hence, we work around this
+    # calling check_X_y here just as our native estimator
+    # does, but we will re-throw to satisfy
+    # check_estimator()
+    from sklearn.utils.validation import check_X_y
+    if y is None and isinstance(X, np.ndarray):
+        y = np.zeros((X.shape[0],))
+        y[0] = 1.
+    try:
+        check_X_y(X, y, force_all_finite=True)
+    except ValueError as e:
+        if 'inf' in repr(e) or 'NaN' in repr(e):
+            raise e
+        else:
+            # silently discard
+            pass
+    except:
+        # silently discard
+        pass
+
+
 class XTsetlinMachineClassifier(TsetlinMachineClassifier):
     """Wrapped estimator
 
@@ -22,45 +50,40 @@ class XTsetlinMachineClassifier(TsetlinMachineClassifier):
     type.
     """
     def fit(self, X, y, n_iter=500):
+        check_finite_X_y(X, y)
+        X = self._fit_transform(X)
 
-        try:
-            X = self._fit_transform(X)
-        except:
-            pass
-
-        super(type(self), self).fit(X, y, n_iter)
+        super().fit(X, y, n_iter)
         return self
 
 
     def partial_fit(self, X, y, classes=None, n_iter=500):
+        check_finite_X_y(X, y)
+        X = self._fit_transform(X)
 
-        try:
-            X = self._fit_transform(X)
-        except:
-            pass
-
-        super(type(self), self).partial_fit(X, y, classes=classes, n_iter=n_iter)
+        super().partial_fit(X, y, classes=classes, n_iter=n_iter)
         return self
 
 
     def predict(self, X):
+        check_finite_X_y(X, None)
+        X = self._transform(X)
 
-        try:
-            X = self.xformer_.transform(X)
-        except:
-            pass
-
-        return super(type(self), self).predict(X)
+        return super().predict(X)
 
 
     def predict_proba(self, X):
+        check_finite_X_y(X, None)
+        X = self._transform(X)
 
-        try:
-            X = self.xformer_.transform(X)
-        except:
-            pass
+        return super().predict_proba(X)
 
-        return super(type(self), self).predict_proba(X)
+
+    def _transform(self, X):
+        if hasattr(self, 'xformer_'):
+            return self.xformer_.transform(X)
+        else:
+            return self._fit_transform(X)
 
 
     def _fit_transform(self, X):
