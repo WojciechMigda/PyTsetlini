@@ -91,7 +91,7 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
             Returns self.
         """
         # Check that X and y have correct shape
-        X, y = check_X_y(X, y)
+        X, y = check_X_y(X, y, force_all_finite=True)
 
         checked_y = column_or_1d(y, warn=True)
         check_classification_targets(checked_y)
@@ -112,7 +112,7 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
         self : returns an instance of self.
         """
         # Check that X and y have correct shape
-        X, y = check_X_y(X, y)
+        X, y = check_X_y(X, y, force_all_finite=True)
 
         checked_y = column_or_1d(y, warn=True)
         check_classification_targets(checked_y)
