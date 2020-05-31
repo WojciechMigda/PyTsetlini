@@ -14,6 +14,7 @@ install:
   - travis_retry sudo apt-get -qq update
   - travis_retry sudo apt-get -qy install "${CXX}"
   - pip3 install -r requirements.txt
+  - pip3 install pandas
 
 script:
   - python3 setup.py build
