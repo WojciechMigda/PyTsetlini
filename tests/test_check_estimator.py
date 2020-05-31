@@ -108,4 +108,4 @@ class XTsetlinMachineClassifier(TsetlinMachineClassifier):
 def test_classifier_passes_check_estimator():
     from sklearn.utils.estimator_checks import check_estimator
 
-    check_estimator(XTsetlinMachineClassifier)
+    check_estimator(XTsetlinMachineClassifier())
