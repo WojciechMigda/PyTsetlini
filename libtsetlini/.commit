@@ -1,0 +1,5 @@
+commit 146c5d2c1d2382afb29d19214e739ae789023c55
+Author: Wojciech Migda <wojtek.golf@interia.pl>
+Date:   Wed May 27 22:30:53 2020 +0200
+
+    Add some extra compiler features/STL checks
