@@ -1,7 +1,5 @@
 #!/bin/bash -e
 
-my_root=`git rev-parse --show-toplevel`
-
 
 pushd() {
     command pushd "$@" > /dev/null
@@ -76,9 +74,9 @@ run_work() {
 
     rsync -av "${lib_repo}"/ "${script_repo}"/libtsetlini
 
-    rm -rf "${script_repo}"/libtsetlini/bindings
-    rm -rf "${script_repo}"/libtsetlini/.build
-    rm -rf "${script_repo}"/libtsetlini/.git
+    rm -rfv "${script_repo}"/libtsetlini/bindings
+    rm -rfv "${script_repo}"/libtsetlini/.build
+    rm -rfv "${script_repo}"/libtsetlini/.git
 
     echo "${lib_commit_hash}" > "${script_repo}"/libtsetlini/.commit_hash
     echo "${lib_commit}" > "${script_repo}"/libtsetlini/.commit
