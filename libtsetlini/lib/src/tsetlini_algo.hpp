@@ -70,6 +70,24 @@ void sum_up_label_votes(
 }
 
 
+/**
+ * @param clause_output
+ *      Calculated output of clauses, vector of 0s and 1s, with size equal
+ *      to 2 * @c number_of_labels * @c number_of_pos_neg_clauses_per_label .
+ *
+ * @param label_sum
+ *      Output vector of integers of @c @c number_of_labels length where
+ *      calculated vote scores will be placed.
+ *
+ * @param number_of_labels
+ *      Integer count of labels the model was trained for.
+ *
+ * @param number_of_pos_neg_clauses_per_label
+ *      Integer count of wither positive or negative clauses used for training.
+ *
+ * @param threshold
+ *      Integer threshold to count votes against.
+ */
 inline
 void sum_up_all_label_votes(
     aligned_vector_char const & clause_output,
@@ -231,36 +249,6 @@ void calculate_clause_output_for_predict(
 }
 
 
-template<typename state_type>
-inline
-void calculate_clause_output_OLD(
-    aligned_vector_char const & X,
-    aligned_vector_char & clause_output,
-    int const number_of_clauses,
-    int const number_of_features,
-    std::vector<aligned_vector<state_type>> const & ta_state)
-{
-    char const * X_p = assume_aligned<alignment>(X.data());
-
-    for (int j = 0; j < number_of_clauses; ++j)
-    {
-        bool output = true;
-
-        state_type const * ta_state_j = assume_aligned<alignment>(ta_state[j].data());
-
-        for (int k = 0; k < number_of_features and output == true; ++k)
-        {
-            bool const action_include = action(ta_state_j[pos_feat_index(k)]);
-            bool const action_include_negated = action(ta_state_j[neg_feat_index(k, number_of_features)]);
-
-            output = ((action_include == true and X_p[k] == 0) or (action_include_negated == true and X_p[k] != 0)) ? false : output;
-        }
-
-        clause_output[j] = output;
-    }
-}
-
-
 template<typename state_type, unsigned int BATCH_SZ>
 inline
 void calculate_clause_output_T(
@@ -333,7 +321,30 @@ void calculate_clause_output_T(
     }
 }
 
-
+/**
+ * @param X
+ *      Vector of 0s and 1s, with size equal to @c number_of_features .
+ *
+ * @param clause_output
+ *      Output vector of 0s and 1s, with size equal to @c number_of_clauses .
+ *
+ * @param number_of_clauses
+ *      Positive integer equal to size of @c clause_output .
+ *
+ * @param number_of_features
+ *      Positive integer equal to size of @c X .
+ *
+ * @param ta_state
+ *      @c numeric_matrix with 2 * @c number_of_clauses rows and
+ *      @c number_of_features columns.
+ *
+ * @param n_jobs
+ *      Number of parallel jobs.
+ *
+ * @param TILE_SZ
+ *      Positive integer {16, 32, 64, 128} that specifies batch size of
+ *      data processed in @c X .
+ */
 template<typename state_type, typename RowType>
 inline
 void calculate_clause_output(
@@ -540,6 +551,7 @@ void train_automata_batch(
     float const S_inv,
     char const * __restrict X,
     bool const boost_true_positive_feedback,
+    FRNG & frng,
     ClassifierState::frand_cache_type & fcache
     )
 {
@@ -554,13 +566,13 @@ void train_automata_batch(
         {
             if (clause_output[j] == 0)
             {
-                fcache.refill();
+                fcache.refill(frng);
 
                 fcache.m_pos = block1(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, fcache_, fcache.m_pos);
             }
             else if (clause_output[j] == 1)
             {
-                fcache.refill();
+                fcache.refill(frng);
 
                 if (boost_true_positive_feedback)
                     fcache.m_pos = block2<true>(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, X, fcache_, fcache.m_pos);
@@ -591,12 +603,73 @@ void train_automata_batch(
     float const S_inv,
     aligned_vector_char const & X,
     bool const boost_true_positive_feedback,
+    FRNG & frng,
     ClassifierState::frand_cache_type & fcache
     )
 {
     train_automata_batch(ta_state, begin, end, feedback_to_clauses,
         clause_output, number_of_features, number_of_states, S_inv, X.data(),
-        boost_true_positive_feedback, fcache);
+        boost_true_positive_feedback, frng, fcache);
+}
+
+
+template<typename TFRNG>
+inline
+void calculate_feedback_to_clauses(
+    feedback_vector_type & feedback_to_clauses,
+    label_type const target_label,
+    label_type const opposite_label,
+    int const target_label_votes,
+    int const opposite_label_votes,
+    int const number_of_pos_neg_clauses_per_label,
+    int const threshold,
+    TFRNG & fgen)
+{
+    const auto THR2_inv = (ONE / (threshold * 2));
+    const auto THR_pos = THR2_inv * (threshold - target_label_votes);
+    const auto THR_neg = THR2_inv * (threshold + opposite_label_votes);
+
+    std::fill(feedback_to_clauses.begin(), feedback_to_clauses.end(), 0);
+
+    for (int j = 0; j < number_of_pos_neg_clauses_per_label; ++j)
+    {
+        if (fgen.next() > THR_pos)
+        {
+            continue;
+        }
+
+        // Type I Feedback
+        feedback_to_clauses[pos_clause_index(target_label, j, number_of_pos_neg_clauses_per_label)] = 1;
+    }
+    for (int j = 0; j < number_of_pos_neg_clauses_per_label; ++j)
+    {
+        if (fgen.next() > THR_pos)
+        {
+            continue;
+        }
+
+        // Type II Feedback
+        feedback_to_clauses[neg_clause_index(target_label, j, number_of_pos_neg_clauses_per_label)] = -1;
+    }
+
+    for (int j = 0; j < number_of_pos_neg_clauses_per_label; ++j)
+    {
+        if (fgen.next() > THR_neg)
+        {
+            continue;
+        }
+
+        feedback_to_clauses[pos_clause_index(opposite_label, j, number_of_pos_neg_clauses_per_label)] = -1;
+    }
+    for (int j = 0; j < number_of_pos_neg_clauses_per_label; ++j)
+    {
+        if (fgen.next() > THR_neg)
+        {
+            continue;
+        }
+
+        feedback_to_clauses[neg_clause_index(opposite_label, j, number_of_pos_neg_clauses_per_label)] = 1;
+    }
 }
 
 
