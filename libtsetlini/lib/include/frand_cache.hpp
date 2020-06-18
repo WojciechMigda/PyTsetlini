@@ -5,28 +5,36 @@
 #include "assume_aligned.hpp"
 
 #include <vector>
+#include <algorithm>
 
 namespace Tsetlini
 {
 
-template<typename RNG, int alignment=32, typename real_type=float>
+template<int alignment=32, typename real_type=float>
 struct frand_cache
 {
-    explicit frand_cache(int sz, seed_type seed) :
-        m_pos(0),
-        m_fcache(sz),
-        m_rng(seed)
+    template<typename TFRNG>
+    explicit frand_cache(TFRNG & frng, int sz, seed_type seed) :
+        m_pos(sz),
+        m_fcache(sz)
     {
     }
 
+    frand_cache()
+        : m_pos(0)
+        , m_fcache(0)
+    {
+    }
+
+    template<typename TFRNG>
     inline
-    void refill()
+    void refill(TFRNG & frng)
     {
         real_type * fcache_p = assume_aligned<alignment>(m_fcache.data());
 
-        for (auto it = 0; it < m_pos; ++it)
+        for (auto it = 0u; it < std::min<unsigned int>(m_pos, m_fcache.size()); ++it)
         {
-            fcache_p[it] = m_rng.next();
+            fcache_p[it] = frng();
         }
         m_pos = 0;
     }
@@ -44,9 +52,8 @@ struct frand_cache
         return next();
     }
 
-    int m_pos;
+    unsigned int m_pos;
     aligned_vector_float m_fcache;
-    RNG m_rng;
 };
 
 
