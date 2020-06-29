@@ -1,7 +1,7 @@
-commit 93c7f9d115c4d81d2f9fcca488a03309af3f040b
+commit c48cf777dd91ba413ee2f697f2dbe03280357305
 Author: WojciechMigda <WojciechMigda@users.noreply.github.com>
-Date:   Thu Jun 18 23:15:08 2020 +0200
+Date:   Mon Jun 29 21:14:38 2020 +0200
 
-    Merge pull request #21 from WojciechMigda/GH20-partial-fit-example
+    Merge pull request #34 from WojciechMigda/GH33-data-processing-diet
     
-    Add example with partial fit which restart using deserialized state
+    Calculate clause output and train automata only using data for the two selected labels

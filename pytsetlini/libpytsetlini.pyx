@@ -68,7 +68,7 @@ cdef extern from "tsetlini_private.hpp":
 [](std::string const & params, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::label_vector_type const & y, int number_of_labels, unsigned int n_epochs)
 {
     return
-    Tsetlini::make_params_from_json(params)
+    Tsetlini::make_classifier_params_from_json(params)
         .rightMap([](auto && params){ return Tsetlini::ClassifierState(params); })
         .rightFlatMap([&X, &y, number_of_labels, n_epochs](auto && state)
         {

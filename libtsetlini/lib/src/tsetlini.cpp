@@ -187,7 +187,7 @@ status_message_t check_for_predict(
 
 
 template<typename state_type, typename row_type>
-void update_impl(
+void classifier_update_impl(
     row_type const & X,
     label_type const target_label,
     label_type const opposite_label,
@@ -208,15 +208,35 @@ void update_impl(
     int clause_output_tile_size
     )
 {
-    calculate_clause_output(
-        X,
-        cache.clause_output,
-        number_of_clauses,
-        number_of_features,
-        ta_state,
-        n_jobs,
-        clause_output_tile_size
-    );
+    {
+        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(target_label, number_of_pos_neg_clauses_per_label);
+
+        calculate_clause_output(
+            X,
+            cache.clause_output,
+            clause_ix_begin,
+            clause_ix_end,
+            number_of_features,
+            ta_state,
+            n_jobs,
+            clause_output_tile_size
+        );
+    }
+
+    {
+        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(opposite_label, number_of_pos_neg_clauses_per_label);
+
+        calculate_clause_output(
+            X,
+            cache.clause_output,
+            clause_ix_begin,
+            clause_ix_end,
+            number_of_features,
+            ta_state,
+            n_jobs,
+            clause_output_tile_size
+        );
+    }
 
     sum_up_label_votes(
         cache.clause_output,
@@ -234,7 +254,7 @@ void update_impl(
 
 
 
-    calculate_feedback_to_clauses(
+    calculate_classifier_feedback_to_clauses(
         cache.feedback_to_clauses,
         target_label,
         opposite_label,
@@ -246,20 +266,43 @@ void update_impl(
 
     const auto S_inv = ONE / s;
 
-    train_automata_batch(
-        ta_state,
-        0,
-        number_of_clauses,
-        cache.feedback_to_clauses.data(),
-        cache.clause_output.data(),
-        number_of_features,
-        number_of_states,
-        S_inv,
-        X,
-        boost_true_positive_feedback,
-        fgen,
-        cache.fcache
-    );
+    {
+        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(target_label, number_of_pos_neg_clauses_per_label);
+
+        train_classifier_automata(
+            ta_state,
+            clause_ix_begin,
+            clause_ix_end,
+            cache.feedback_to_clauses.data(),
+            cache.clause_output.data(),
+            number_of_features,
+            number_of_states,
+            S_inv,
+            X.data(),
+            boost_true_positive_feedback,
+            fgen,
+            cache.fcache
+        );
+    }
+
+    {
+        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(opposite_label, number_of_pos_neg_clauses_per_label);
+
+        train_classifier_automata(
+            ta_state,
+            clause_ix_begin,
+            clause_ix_end,
+            cache.feedback_to_clauses.data(),
+            cache.clause_output.data(),
+            number_of_features,
+            number_of_states,
+            S_inv,
+            X.data(),
+            boost_true_positive_feedback,
+            fgen,
+            cache.fcache
+        );
+    }
 }
 
 
@@ -278,7 +321,7 @@ evaluate_impl(
     auto const number_of_labels = Params::number_of_labels(params);
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
-    auto const number_of_clauses = Params::number_of_clauses(params);
+    auto const number_of_clauses = Params::number_of_classifier_clauses(params);
     auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
@@ -337,7 +380,7 @@ predict_impl(ClassifierState const & state, aligned_vector_char const & sample)
             calculate_clause_output_for_predict(
                 sample,
                 state.cache.clause_output,
-                Params::number_of_clauses(state.m_params),
+                Params::number_of_classifier_clauses(state.m_params),
                 Params::number_of_features(state.m_params),
                 ta_state,
                 n_jobs,
@@ -380,7 +423,7 @@ predict_impl(ClassifierState const & state, std::vector<aligned_vector_char> con
     auto const number_of_labels = Params::number_of_labels(params);
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
-    auto const number_of_clauses = Params::number_of_clauses(params);
+    auto const number_of_clauses = Params::number_of_classifier_clauses(params);
     auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
@@ -436,7 +479,7 @@ predict_raw_impl(ClassifierState const & state, aligned_vector_char const & samp
     auto const number_of_labels = Params::number_of_labels(params);
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
-    auto const number_of_clauses = Params::number_of_clauses(params);
+    auto const number_of_clauses = Params::number_of_classifier_clauses(params);
     auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
@@ -483,7 +526,7 @@ predict_raw_impl(ClassifierState const & state, std::vector<aligned_vector_char>
     auto const number_of_labels = Params::number_of_labels(params);
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
-    auto const number_of_clauses = Params::number_of_clauses(params);
+    auto const number_of_clauses = Params::number_of_classifier_clauses(params);
     auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
@@ -554,7 +597,7 @@ fit_online_impl(
     auto const number_of_labels = Params::number_of_labels(params);
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
-    auto const number_of_clauses = Params::number_of_clauses(params);
+    auto const number_of_clauses = Params::number_of_classifier_clauses(params);
     auto const number_of_features = Params::number_of_features(params);
     auto const number_of_states = Params::number_of_states(params);
     auto const s = Params::s(params);
@@ -586,7 +629,7 @@ fit_online_impl(
 
         for (auto i = 0u; i < number_of_examples; ++i)
         {
-            update_impl(
+            classifier_update_impl(
                 X[ix[i]],
                 y[ix[i]],
                 opposite_y[ix[i]],
@@ -690,68 +733,68 @@ partial_fit_impl(
 
 
 
-Classifier::Classifier(params_t const & params) :
+ClassifierClassic::ClassifierClassic(params_t const & params) :
     m_state(params)
 {
 }
 
 
-Classifier::Classifier(params_t && params) :
+ClassifierClassic::ClassifierClassic(params_t && params) :
     m_state(params)
 {
 }
 
 
-Classifier::Classifier(ClassifierState const & state) :
+ClassifierClassic::ClassifierClassic(ClassifierState const & state) :
     m_state(state)
 {
 }
 
 
 Either<status_message_t, label_type>
-Classifier::predict(aligned_vector_char const & sample) const
+ClassifierClassic::predict(aligned_vector_char const & sample) const
 {
     return predict_impl(m_state, sample);
 }
 
 
 Either<status_message_t, label_vector_type>
-Classifier::predict(std::vector<aligned_vector_char> const & X) const
+ClassifierClassic::predict(std::vector<aligned_vector_char> const & X) const
 {
     return predict_impl(m_state, X);
 }
 
 
 Either<status_message_t, aligned_vector_int>
-Classifier::predict_raw(aligned_vector_char const & sample) const
+ClassifierClassic::predict_raw(aligned_vector_char const & sample) const
 {
     return predict_raw_impl(m_state, sample);
 }
 
 
 Either<status_message_t, std::vector<aligned_vector_int>>
-Classifier::predict_raw(std::vector<aligned_vector_char> const & X) const
+ClassifierClassic::predict_raw(std::vector<aligned_vector_char> const & X) const
 {
     return predict_raw_impl(m_state, X);
 }
 
 
 Either<status_message_t, real_type>
-Classifier::evaluate(std::vector<aligned_vector_char> const & X, label_vector_type const & y) const
+ClassifierClassic::evaluate(std::vector<aligned_vector_char> const & X, label_vector_type const & y) const
 {
     return evaluate_impl(m_state, X, y);
 }
 
 
 status_message_t
-Classifier::partial_fit(std::vector<aligned_vector_char> const & X, label_vector_type const & y, int max_number_of_labels, unsigned int epochs)
+ClassifierClassic::partial_fit(std::vector<aligned_vector_char> const & X, label_vector_type const & y, int max_number_of_labels, unsigned int epochs)
 {
     return partial_fit_impl(m_state, X, y, max_number_of_labels, epochs);
 }
 
 
 status_message_t
-Classifier::fit(std::vector<aligned_vector_char> const & X, label_vector_type const & y, int max_number_of_labels, unsigned int epochs)
+ClassifierClassic::fit(std::vector<aligned_vector_char> const & X, label_vector_type const & y, int max_number_of_labels, unsigned int epochs)
 {
     return fit_impl(m_state, X, y, max_number_of_labels, epochs);
 }
@@ -769,24 +812,24 @@ fit_impl(
 }
 
 
-params_t Classifier::read_params() const
+params_t ClassifierClassic::read_params() const
 {
     return m_state.m_params;
 }
 
 
-ClassifierState Classifier::read_state() const
+ClassifierState ClassifierClassic::read_state() const
 {
     return m_state;
 }
 
 
-Either<status_message_t, Classifier>
-make_classifier(std::string const & json_params)
+Either<status_message_t, ClassifierClassic>
+make_classifier_classic(std::string const & json_params)
 {
     auto rv =
-        make_params_from_json(json_params)
-        .rightMap([](params_t && params){ return Classifier(params); })
+        make_classifier_params_from_json(json_params)
+        .rightMap([](params_t && params){ return ClassifierClassic(params); })
         ;
 
     return rv;

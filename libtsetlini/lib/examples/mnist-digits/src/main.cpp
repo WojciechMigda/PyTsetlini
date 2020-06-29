@@ -133,7 +133,7 @@ either is not readable or does not exist.)";
             y_train.insert(y_train.end(), y_folds[fit].cbegin(), y_folds[fit].cend());
         }
 
-        Tsetlini::make_classifier(R"({
+        Tsetlini::make_classifier_classic(R"({
                 "threshold": 10,
                 "s": 3.0,
                 "number_of_pos_neg_clauses_per_label": 50,
@@ -145,7 +145,7 @@ either is not readable or does not exist.)";
                 "verbose": false
             })")
             .leftMap(error_printer)
-            .rightMap([&](Tsetlini::Classifier && clf)
+            .rightMap([&](Tsetlini::ClassifierClassic && clf)
             {
                 auto status = clf.fit(X_train, y_train, 10, 300);
 

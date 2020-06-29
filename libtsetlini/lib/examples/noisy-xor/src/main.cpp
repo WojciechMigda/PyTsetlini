@@ -123,7 +123,7 @@ $> wget https://raw.githubusercontent.com/cair/TsetlinMachineCython/79f0be5c9b25
     };
 
 
-    Tsetlini::make_classifier(R"({
+    Tsetlini::make_classifier_classic(R"({
             "threshold": 15,
             "s": 3.9,
             "number_of_pos_neg_clauses_per_label": 5,
@@ -135,7 +135,7 @@ $> wget https://raw.githubusercontent.com/cair/TsetlinMachineCython/79f0be5c9b25
             "verbose": false
         })")
         .leftMap(error_printer)
-        .rightMap([&](Tsetlini::Classifier && clf)
+        .rightMap([&](Tsetlini::ClassifierClassic && clf)
         {
             // Training of the Tsetlin Machine in batch mode. The Tsetlin Machine can also be trained online
             auto status = clf.fit(train_X, train_y, 2, 200);
