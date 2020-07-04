@@ -209,13 +209,13 @@ void classifier_update_impl(
     )
 {
     {
-        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(target_label, number_of_pos_neg_clauses_per_label);
+        auto const [output_ix_begin, output_ix_end] = clause_range_for_label(target_label, number_of_pos_neg_clauses_per_label);
 
         calculate_clause_output(
             X,
             cache.clause_output,
-            clause_ix_begin,
-            clause_ix_end,
+            output_ix_begin,
+            output_ix_end,
             number_of_features,
             ta_state,
             n_jobs,
@@ -224,13 +224,13 @@ void classifier_update_impl(
     }
 
     {
-        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(opposite_label, number_of_pos_neg_clauses_per_label);
+        auto const [output_ix_begin, output_ix_end] = clause_range_for_label(opposite_label, number_of_pos_neg_clauses_per_label);
 
         calculate_clause_output(
             X,
             cache.clause_output,
-            clause_ix_begin,
-            clause_ix_end,
+            output_ix_begin,
+            output_ix_end,
             number_of_features,
             ta_state,
             n_jobs,
@@ -267,12 +267,12 @@ void classifier_update_impl(
     const auto S_inv = ONE / s;
 
     {
-        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(target_label, number_of_pos_neg_clauses_per_label);
+        auto const [input_ix_begin, input_ix_end] = clause_range_for_label(target_label, number_of_pos_neg_clauses_per_label);
 
         train_classifier_automata(
             ta_state,
-            clause_ix_begin,
-            clause_ix_end,
+            input_ix_begin,
+            input_ix_end,
             cache.feedback_to_clauses.data(),
             cache.clause_output.data(),
             number_of_features,
@@ -286,12 +286,12 @@ void classifier_update_impl(
     }
 
     {
-        auto const [clause_ix_begin, clause_ix_end] = clause_range_for_label(opposite_label, number_of_pos_neg_clauses_per_label);
+        auto const [input_ix_begin, input_ix_end] = clause_range_for_label(opposite_label, number_of_pos_neg_clauses_per_label);
 
         train_classifier_automata(
             ta_state,
-            clause_ix_begin,
-            clause_ix_end,
+            input_ix_begin,
+            input_ix_end,
             cache.feedback_to_clauses.data(),
             cache.clause_output.data(),
             number_of_features,
@@ -335,7 +335,7 @@ evaluate_impl(
                 calculate_clause_output_for_predict(
                     X[it],
                     state.cache.clause_output,
-                    number_of_clauses,
+                    number_of_clauses / 2,
                     number_of_features,
                     ta_state,
                     n_jobs,
@@ -380,7 +380,7 @@ predict_impl(ClassifierState const & state, aligned_vector_char const & sample)
             calculate_clause_output_for_predict(
                 sample,
                 state.cache.clause_output,
-                Params::number_of_classifier_clauses(state.m_params),
+                Params::number_of_classifier_clauses(state.m_params) / 2,
                 Params::number_of_features(state.m_params),
                 ta_state,
                 n_jobs,
@@ -437,7 +437,7 @@ predict_impl(ClassifierState const & state, std::vector<aligned_vector_char> con
                 calculate_clause_output_for_predict(
                     X[it],
                     state.cache.clause_output,
-                    number_of_clauses,
+                    number_of_clauses / 2,
                     number_of_features,
                     ta_state,
                     n_jobs,
@@ -490,7 +490,7 @@ predict_raw_impl(ClassifierState const & state, aligned_vector_char const & samp
             calculate_clause_output_for_predict(
                 sample,
                 state.cache.clause_output,
-                number_of_clauses,
+                number_of_clauses / 2,
                 number_of_features,
                 ta_state,
                 n_jobs,
@@ -540,7 +540,7 @@ predict_raw_impl(ClassifierState const & state, std::vector<aligned_vector_char>
                 calculate_clause_output_for_predict(
                     X[it],
                     state.cache.clause_output,
-                    number_of_clauses,
+                    number_of_clauses / 2,
                     number_of_features,
                     ta_state,
                     n_jobs,
