@@ -1,6 +1,7 @@
 # coding: utf-8
 
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import (
+    BaseEstimator, ClassifierMixin, RegressorMixin)
 from sklearn.utils.validation import (
     check_X_y, check_array, check_is_fitted, column_or_1d)
 from sklearn.utils.multiclass import check_classification_targets
@@ -22,13 +23,13 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
     Parameters
     ----------
     number_of_pos_neg_clauses_per_label : int, default=5
-        Number of positive / negative clauses per class. E.g. for N classes
+        Number of positive / negative clauses per label. E.g. for N labels
         this will lead to the model having
-        2 * number_of_pos_neg_clauses_per_label * N clauses.
+        2 * number_of_pos_neg_clauses_per_label * N labels.
     number_of_states: int, default=100
         Number of integral states associated with a single Tsetlin automaton.
     s: float, default=2.0
-        TODO.
+        Specificity.
     threshold: int, default=15
         Threshold value for Tsetlin automata.
     boost_true_positive_feedback: int, default=0
@@ -211,3 +212,63 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
             raise ValueError("X.shape[1] should be {0:d}, not {1:d}.".format(
                 self.n_features_, X.shape[1]))
         return X
+
+
+class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
+    """Tsetlin Machine Multiclass regressor.
+
+    This estimator implements Tsetlin Machine regressor
+    following the example code from
+    https://github.com/cair/pyTsetlinMachine
+    with several speed and logic improvements.
+
+    Parameters
+    ----------
+    number_of_clauses : int, default=20
+        Number of clauses
+    number_of_states: int, default=100
+        Number of integral states associated with a single Tsetlin automaton.
+    s: float, default=2.0
+        Specificity.
+    threshold: int, default=15
+        Threshold value for Tsetlin automata.
+    boost_true_positive_feedback: int, default=0
+        TODO.
+    n_jobs: int, default=-1
+        The number of CPUs to use for computation.
+        ``-1`` means using all processors.
+    verbose: bool, default=False
+        Flag to disable/enable verbose output
+    random_state: int, default=None
+        The seed of the pseudo random number generator to use.
+        If None, the random number generator is the RandomState
+        instance used by `np.random`.
+
+    Attributes
+    ----------
+    X_ : ndarray, shape (n_samples, n_features)
+        The input passed during :meth:`fit`.
+    y_ : ndarray, shape (n_samples,)
+        The response values passed during :meth:`fit`.
+    """
+    def __init__(self,
+                 number_of_clauses=20,
+                 number_of_states=100,
+                 s=2.0,
+                 threshold=15,
+                 boost_true_positive_feedback=0,
+                 counting_type='auto',
+                 clause_output_tile_size=16,
+                 n_jobs=-1,
+                 verbose=False,
+                 random_state=None):
+        self.number_of_clauses = number_of_clauses
+        self.number_of_states = number_of_states
+        self.s = s
+        self.threshold = threshold
+        self.boost_true_positive_feedback = boost_true_positive_feedback
+        self.counting_type = counting_type
+        self.clause_output_tile_size = clause_output_tile_size
+        self.n_jobs = n_jobs
+        self.verbose = verbose
+        self.random_state = random_state

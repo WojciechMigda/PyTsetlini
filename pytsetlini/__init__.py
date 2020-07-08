@@ -11,3 +11,4 @@ __version__ = '0.0.5'
 # top-level namespace when the library is imported.
 
 from .sklearn_estimator import TsetlinMachineClassifier
+from .sklearn_estimator import TsetlinMachineRegressor
