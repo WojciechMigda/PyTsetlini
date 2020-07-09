@@ -1,7 +1,8 @@
-commit 25e9ff664197e59ec0a1db448f28b822bbe94d44
+commit 68c0a0d6ea661d6dce4b7c2b51459b22e2372b41
+Merge: e1eb094 0bb9a5f
 Author: WojciechMigda <WojciechMigda@users.noreply.github.com>
-Date:   Wed Jul 8 23:11:03 2020 +0200
+Date:   Fri Jul 10 00:51:35 2020 +0200
 
-    Merge pull request #49 from WojciechMigda/california-log
+    Merge pull request #52 from WojciechMigda/regressor-missing-api
     
-    Add execution log for california housing example
+    Add missing regressor api, needed for PyTsetlini
