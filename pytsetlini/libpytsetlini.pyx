@@ -13,7 +13,7 @@ from pytsetlini.either cimport Either
 from pytsetlini.tsetlini_status_code cimport status_message_t
 from pytsetlini.tsetlini_classifier_state cimport ClassifierState
 from pytsetlini.tsetlini_types cimport (aligned_vector_char, label_vector_type,
-    label_type, aligned_vector_int)
+    label_type, aligned_vector_int, response_vector_type, response_type)
 from pytsetlini.tsetlini_state_json cimport to_json_string
 
 from libcpp.string cimport string
@@ -48,7 +48,7 @@ cdef vector[aligned_vector_char] X_as_vectors(np.ndarray X, bint is_sparse):
     return rv
 
 
-cdef label_vector_type y_as_vector(np.ndarray y, bint is_sparse):
+cdef label_vector_type y_as_label_vector(np.ndarray y, bint is_sparse):
     cdef label_vector_type rv
 
     rv.resize(y.shape[0])
@@ -64,7 +64,7 @@ cdef label_vector_type y_as_vector(np.ndarray y, bint is_sparse):
 
 
 cdef extern from "tsetlini_private.hpp":
-    cdef Either[status_message_t, string] train_lambda """
+    cdef Either[status_message_t, string] train_classifier_lambda """
 [](std::string const & params, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::label_vector_type const & y, int number_of_labels, unsigned int n_epochs)
 {
     return
@@ -91,7 +91,7 @@ cdef extern from "tsetlini_private.hpp":
 
 
 cdef extern from "tsetlini_private.hpp":
-    cdef Either[status_message_t, string] train_partial_lambda """
+    cdef Either[status_message_t, string] train_classifier_partial_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::label_vector_type const & y, int n_epochs)
 {
     Tsetlini::ClassifierState state(Tsetlini::params_t{});
@@ -173,11 +173,11 @@ def classifier_fit(np.ndarray npX, bint X_is_sparse, np.ndarray npy, bint y_is_s
     """
     Going with the most basic and general input preparation - deep copy X and y into c++ vectors
     """
-    cdef label_vector_type y = y_as_vector(npy, y_is_sparse)
+    cdef label_vector_type y = y_as_label_vector(npy, y_is_sparse)
     cdef vector[aligned_vector_char] X = X_as_vectors(npX, X_is_sparse)
 
     cdef string js_state = \
-        train_lambda(<string>js_params, X, y, number_of_labels, n_epochs) \
+        train_classifier_lambda(<string>js_params, X, y, number_of_labels, n_epochs) \
             .leftMap(raise_value_error) \
             .leftFlatMap(reduce_status_message_to_string) \
             ._join[string]()
@@ -190,11 +190,11 @@ def classifier_partial_fit(np.ndarray npX, bint X_is_sparse, np.ndarray npy, bin
     """
     Going with the most basic and general input preparation - deep copy X and y into c++ vectors
     """
-    cdef label_vector_type y = y_as_vector(npy, y_is_sparse)
+    cdef label_vector_type y = y_as_label_vector(npy, y_is_sparse)
     cdef vector[aligned_vector_char] X = X_as_vectors(npX, X_is_sparse)
 
     cdef string js_state = \
-        train_partial_lambda(<string>js_model, X, y, n_epochs) \
+        train_classifier_partial_lambda(<string>js_model, X, y, n_epochs) \
             .leftMap(raise_value_error) \
             .leftFlatMap(reduce_status_message_to_string) \
             ._join[string]()
@@ -255,3 +255,106 @@ def classifier_predict_proba(np.ndarray npX, bint X_is_sparse, bytes js_model, i
         counts_to_probas(label_counts[rit], &oview[rit, 0], threshold)
 
     return rv
+
+###############################################################################
+###############################################################################
+
+
+cdef response_vector_type y_as_response_vector(np.ndarray y, bint is_sparse):
+    cdef response_vector_type rv
+
+    rv.resize(y.shape[0])
+
+    if is_sparse:
+        for it in range(y.shape[0]):
+            rv[it] = y[it]
+    else:
+        for it in range(y.shape[0]):
+            rv[it] = y[it]
+
+    return rv
+
+
+cdef extern from "tsetlini_private.hpp":
+    cdef Either[status_message_t, string] train_regressor_lambda """
+[](std::string const & params, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::response_vector_type const & y, unsigned int n_epochs)
+{
+    return
+    Tsetlini::make_regressor_params_from_json(params)
+        .rightMap([](auto && params){ return Tsetlini::RegressorState(params); })
+        .rightFlatMap([&X, &y, n_epochs](auto && state)
+        {
+            auto status = Tsetlini::fit_impl(state, X, y, n_epochs);
+
+            if (status.first == Tsetlini::S_OK)
+            {
+                std::string js_state = Tsetlini::to_json_string(state);
+
+                return neither::Either<Tsetlini::status_message_t, std::string>::rightOf(js_state);
+            }
+            else
+            {
+                return neither::Either<Tsetlini::status_message_t, std::string>::leftOf(status);
+            }
+        })
+        ;
+}
+"""(string params, vector[aligned_vector_char] X, response_vector_type y, unsigned int n_epochs)
+
+
+cdef extern from "tsetlini_private.hpp":
+    cdef Either[status_message_t, string] train_regressor_partial_lambda """
+[](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::response_vector_type const & y, int n_epochs)
+{
+    Tsetlini::RegressorState state(Tsetlini::params_t{});
+
+    Tsetlini::from_json_string(state, js_model);
+
+    auto status = Tsetlini::partial_fit_impl(state, X, y, n_epochs);
+
+    if (status.first == Tsetlini::S_OK)
+    {
+        std::string js_state = Tsetlini::to_json_string(state);
+
+        return neither::Either<Tsetlini::status_message_t, std::string>::rightOf(js_state);
+    }
+    else
+    {
+        return neither::Either<Tsetlini::status_message_t, std::string>::leftOf(status);
+    }
+}
+"""(string js_model, vector[aligned_vector_char] X, response_vector_type y, int n_epochs)
+
+
+def regressor_fit(np.ndarray npX, bint X_is_sparse, np.ndarray npy, bint y_is_sparse, bytes js_params, unsigned int n_epochs):
+
+    """
+    Going with the most basic and general input preparation - deep copy X and y into c++ vectors
+    """
+    cdef response_vector_type y = y_as_response_vector(npy, y_is_sparse)
+    cdef vector[aligned_vector_char] X = X_as_vectors(npX, X_is_sparse)
+
+    cdef string js_state = \
+        train_regressor_lambda(<string>js_params, X, y, n_epochs) \
+            .leftMap(raise_value_error) \
+            .leftFlatMap(reduce_status_message_to_string) \
+            ._join[string]()
+
+    return js_state
+
+
+def regressor_partial_fit(np.ndarray npX, bint X_is_sparse, np.ndarray npy, bint y_is_sparse, bytes js_model, int n_epochs):
+
+    """
+    Going with the most basic and general input preparation - deep copy X and y into c++ vectors
+    """
+    cdef response_vector_type y = y_as_response_vector(npy, y_is_sparse)
+    cdef vector[aligned_vector_char] X = X_as_vectors(npX, X_is_sparse)
+
+    cdef string js_state = \
+        train_regressor_partial_lambda(<string>js_model, X, y, n_epochs) \
+            .leftMap(raise_value_error) \
+            .leftFlatMap(reduce_status_message_to_string) \
+            ._join[string]()
+
+    return js_state
