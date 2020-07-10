@@ -12,3 +12,6 @@ cdef extern from "tsetlini_types.hpp" namespace "Tsetlini":
 
     ctypedef int label_type
     ctypedef vector[label_type] label_vector_type
+
+    ctypedef int response_type
+    ctypedef vector[response_type] response_vector_type
