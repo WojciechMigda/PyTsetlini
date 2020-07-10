@@ -339,6 +339,30 @@ cdef extern from "tsetlini_private.hpp":
 """(string js_model, vector[aligned_vector_char] X)
 
 
+cdef extern from "tsetlini_private.hpp":
+    cdef Either[status_message_t, string] train_regressor_partial_lambda """
+[](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::response_vector_type const & y, int n_epochs)
+{
+    Tsetlini::RegressorState state(Tsetlini::params_t{});
+
+    Tsetlini::from_json_string(state, js_model);
+
+    auto status = Tsetlini::partial_fit_impl(state, X, y, n_epochs);
+
+    if (status.first == Tsetlini::S_OK)
+    {
+        std::string js_state = Tsetlini::to_json_string(state);
+
+        return neither::Either<Tsetlini::status_message_t, std::string>::rightOf(js_state);
+    }
+    else
+    {
+        return neither::Either<Tsetlini::status_message_t, std::string>::leftOf(status);
+    }
+}
+"""(string js_model, vector[aligned_vector_char] X, response_vector_type y, int n_epochs)
+
+
 cdef extern from *:
     cdef Either[response_vector_type, response_vector_type] reduce_status_message_to_response_vector """
 [](Tsetlini::status_message_t && msg)
@@ -395,3 +419,20 @@ def regressor_predict(np.ndarray npX, bint X_is_sparse, bytes js_model):
     cdef response_type * responses_p = responses.data()
     cdef response_type[::1] vec_view = <response_type[:responses.size()]>responses_p
     return np.array(vec_view)
+
+
+def regressor_partial_fit(np.ndarray npX, bint X_is_sparse, np.ndarray npy, bint y_is_sparse, bytes js_model, int n_epochs):
+
+    """
+    Going with the most basic and general input preparation - deep copy X and y into c++ vectors
+    """
+    cdef response_vector_type y = y_as_response_vector(npy, y_is_sparse)
+    cdef vector[aligned_vector_char] X = X_as_vectors(npX, X_is_sparse)
+
+    cdef string js_state = \
+        train_regressor_partial_lambda(<string>js_model, X, y, n_epochs) \
+            .leftMap(raise_value_error) \
+            .leftFlatMap(reduce_status_message_to_string) \
+            ._join[string]()
+
+    return js_state

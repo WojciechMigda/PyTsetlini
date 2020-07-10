@@ -12,7 +12,7 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from .base import (
     _validate_params, _classifier_fit, _classifier_partial_fit,
     _classifier_predict, _classifier_predict_proba,
-    _regressor_fit, _regressor_predict,
+    _regressor_fit, _regressor_predict, _regressor_partial_fit,
     _check_regression_targets)
 
 
@@ -256,10 +256,10 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
         The response values passed during :meth:`fit`.
     """
     def __init__(self,
-                 number_of_regressor_clauses=20,
+                 number_of_regressor_clauses=100,
                  number_of_states=100,
                  s=2.0,
-                 threshold=15,
+                 threshold=50,
                  boost_true_positive_feedback=0,
                  counting_type='auto',
                  clause_output_tile_size=16,
@@ -296,6 +296,8 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
         X, y = check_X_y(X, y, force_all_finite=True)
 
         checked_y = column_or_1d(y, warn=True)
+        if getattr(checked_y, "dtype", None) == np.dtype('O'):
+            checked_y = checked_y.astype('float32')
         _check_regression_targets(checked_y)
 
         return self._fit(X, checked_y, y_range=y_range, n_iter=n_iter)
@@ -354,3 +356,53 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
             raise ValueError("X.shape[1] should be {0:d}, not {1:d}.".format(
                 self.n_features_, X.shape[1]))
         return X
+
+    def _partial_fit(self, X, y, y_range, n_iter):
+        n_iter = int(n_iter)
+        if n_iter <= 0:
+            raise ValueError("Number of iterations must be a positive"
+                             " integer but fit was called with"
+                             " n_iter: {}".format(n_iter))
+
+        y_range = y_range or (0, self.threshold)
+        scaler = MinMaxScaler(feature_range=y_range).fit(y.reshape((-1, 1)))
+        y = np.clip(scaler.transform(y.reshape((-1, 1))).reshape(-1), 0, self.threshold)
+
+        self.model_ = _regressor_partial_fit(
+            X, y, self.model_, n_iter)
+
+        return self
+
+    def partial_fit(self, X, y, n_iter=500, y_range=None):
+        """Fit using existing state of the classifier for online-learning.
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape (n_samples, n_features)
+            Subset of the training data
+        y : numpy array, shape (n_samples,)
+            Subset of the target values
+
+        Returns
+        -------
+        self : returns an instance of self.
+        """
+        # Check that X and y have correct shape
+        X, y = check_X_y(X, y, force_all_finite=True)
+
+        checked_y = column_or_1d(y, warn=True)
+        if getattr(checked_y, "dtype", None) == np.dtype('O'):
+            checked_y = checked_y.astype('float32')
+        _check_regression_targets(checked_y)
+
+        # if not fitted:
+        if not hasattr(self, 'model_'):
+            self._fit(X, y, n_iter=n_iter, y_range=y_range)
+        else:
+            if X.shape[1] != self.n_features_:
+                raise ValueError("Number of features in X and"
+                                 " fitted array does not match."
+                                 " X: {}, fitted: {}".format(
+                                    X.shape[1], self.n_features_))
+            self._partial_fit(X, y, n_iter=n_iter, y_range=y_range)
+
+        return self

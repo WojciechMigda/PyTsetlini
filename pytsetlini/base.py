@@ -142,3 +142,20 @@ def _regressor_predict(X, js_model):
     y_hat = libpytsetlini.regressor_predict(X, X_is_sparse, js_model)
 
     return y_hat
+
+
+def _regressor_partial_fit(X, y, js_model, n_iter):
+    """
+    "number_of_features" will be derived from X and y
+    """
+
+    X_is_sparse = sp.issparse(X)
+    y_is_sparse = sp.issparse(y)
+
+    js_state = libpytsetlini.regressor_partial_fit(
+        X, X_is_sparse,
+        y, y_is_sparse,
+        js_model,
+        n_iter)
+
+    return js_state
