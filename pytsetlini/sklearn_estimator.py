@@ -12,7 +12,7 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from .base import (
     _validate_params, _classifier_fit, _classifier_partial_fit,
     _classifier_predict, _classifier_predict_proba,
-    _regressor_fit,
+    _regressor_fit, _regressor_predict,
     _check_regression_targets)
 
 
@@ -320,3 +320,37 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
         self.n_features_ = X.shape[1]
 
         return self
+
+    def predict(self, X):
+        """A reference implementation of a prediction for a regressor.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            The input samples.
+
+        Returns
+        -------
+        y : ndarray, shape (n_samples,)
+            The response for each sample is the response of the closest sample
+            seen during fit.
+        """
+        X = self._validate_for_predict(X)
+
+        y_hat_raw = _regressor_predict(X, self.model_)
+
+        y_hat = self.scaler_.inverse_transform(y_hat_raw.reshape(-1, 1))
+
+        return y_hat.reshape(-1)
+
+    def _validate_for_predict(self, X):
+        # Check is fit had been called
+        check_is_fitted(self, ['model_'])
+
+        # Input validation
+        X = check_array(X)
+
+        if X.shape[1] != self.n_features_:
+            raise ValueError("X.shape[1] should be {0:d}, not {1:d}.".format(
+                self.n_features_, X.shape[1]))
+        return X

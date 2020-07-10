@@ -133,3 +133,12 @@ def _regressor_fit(X, y, params, n_iter):
         n_iter)
 
     return js_state
+
+
+def _regressor_predict(X, js_model):
+
+    X_is_sparse = sp.issparse(X)
+
+    y_hat = libpytsetlini.regressor_predict(X, X_is_sparse, js_model)
+
+    return y_hat

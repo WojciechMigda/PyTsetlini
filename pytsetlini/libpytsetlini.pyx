@@ -115,7 +115,7 @@ cdef extern from "tsetlini_private.hpp":
 
 
 cdef extern from "tsetlini_private.hpp":
-    cdef Either[status_message_t, label_vector_type] predict_lambda """
+    cdef Either[status_message_t, label_vector_type] predict_classifier_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X)
 {
     Tsetlini::ClassifierState state(Tsetlini::params_t{});
@@ -207,7 +207,7 @@ def classifier_predict(np.ndarray npX, bint X_is_sparse, bytes js_model):
     cdef vector[aligned_vector_char] X = X_as_vectors(npX, X_is_sparse)
 
     cdef label_vector_type labels = \
-        predict_lambda(<string>js_model, X) \
+        predict_classifier_lambda(<string>js_model, X) \
             .leftMap(raise_value_error) \
             .leftFlatMap(reduce_status_message_to_label_vector) \
             ._join[label_vector_type]()
@@ -326,6 +326,28 @@ cdef extern from "tsetlini_private.hpp":
 """(string js_model, vector[aligned_vector_char] X, response_vector_type y, int n_epochs)
 
 
+cdef extern from "tsetlini_private.hpp":
+    cdef Either[status_message_t, response_vector_type] predict_regressor_lambda """
+[](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X)
+{
+    Tsetlini::RegressorState state(Tsetlini::params_t{});
+
+    Tsetlini::from_json_string(state, js_model);
+
+    return Tsetlini::predict_impl(state, X);
+}
+"""(string js_model, vector[aligned_vector_char] X)
+
+
+cdef extern from *:
+    cdef Either[response_vector_type, response_vector_type] reduce_status_message_to_response_vector """
+[](Tsetlini::status_message_t && msg)
+{
+    return neither::Either<Tsetlini::response_vector_type, Tsetlini::response_vector_type>::leftOf(Tsetlini::response_vector_type());
+}
+""" (status_message_t msg)
+
+
 def regressor_fit(np.ndarray npX, bint X_is_sparse, np.ndarray npy, bint y_is_sparse, bytes js_params, unsigned int n_epochs):
 
     """
@@ -358,3 +380,18 @@ def regressor_partial_fit(np.ndarray npX, bint X_is_sparse, np.ndarray npy, bint
             ._join[string]()
 
     return js_state
+
+
+def regressor_predict(np.ndarray npX, bint X_is_sparse, bytes js_model):
+
+    cdef vector[aligned_vector_char] X = X_as_vectors(npX, X_is_sparse)
+
+    cdef response_vector_type responses = \
+        predict_regressor_lambda(<string>js_model, X) \
+            .leftMap(raise_value_error) \
+            .leftFlatMap(reduce_status_message_to_response_vector) \
+            ._join[response_vector_type]()
+
+    cdef response_type * responses_p = responses.data()
+    cdef response_type[::1] vec_view = <response_type[:responses.size()]>responses_p
+    return np.array(vec_view)
