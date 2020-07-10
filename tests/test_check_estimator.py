@@ -4,6 +4,7 @@ import pytest
 
 import numpy as np
 from pytsetlini import TsetlinMachineClassifier
+from pytsetlini import TsetlinMachineRegressor
 
 
 def _unpack_bits(a):
@@ -105,7 +106,71 @@ class XTsetlinMachineClassifier(TsetlinMachineClassifier):
         return X
 
 
+class XTsetlinMachineRegressor(TsetlinMachineRegressor):
+    """Wrapped estimator
+
+    Pipeline doesn't work well with check_estimator
+    (https://github.com/scikit-learn/scikit-learn/issues/9768).
+    This wrapper provides embedded input X transformation, also
+    ensuring that all exceptions at the transformation step are caught
+    so that they can be raised when the checks are run by the wrapped
+    type.
+    """
+    def fit(self, X, y, n_iter=500):
+        check_finite_X_y(X, y)
+        X = self._fit_transform(X)
+
+        super().fit(X, y, n_iter)
+        return self
+
+
+    def partial_fit(self, X, y, n_iter=500):
+        check_finite_X_y(X, y)
+        X = self._fit_transform(X)
+
+        super().partial_fit(X, y, n_iter=n_iter)
+        return self
+
+
+    def predict(self, X):
+        check_finite_X_y(X, None)
+        X = self._transform(X)
+
+        return super().predict(X)
+
+
+    def _transform(self, X):
+        if hasattr(self, 'xformer_'):
+            return self.xformer_.transform(X)
+        else:
+            return self._fit_transform(X)
+
+
+    def _fit_transform(self, X):
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import MinMaxScaler
+        from sklearn.preprocessing import FunctionTransformer
+
+        xformer = Pipeline(steps=[
+            ('scaler', MinMaxScaler(feature_range=(0, 255))),
+            ('unpacker', FunctionTransformer(_unpack_bits)),
+        ])
+
+        try:
+            X = xformer.fit_transform(X)
+            self.xformer_ = xformer
+        except:
+            pass
+
+        return X
+
+
 def test_classifier_passes_check_estimator():
     from sklearn.utils.estimator_checks import check_estimator
 
     check_estimator(XTsetlinMachineClassifier())
+
+def test_regressor_passes_check_estimator():
+    from sklearn.utils.estimator_checks import check_estimator
+
+    check_estimator(XTsetlinMachineRegressor())
