@@ -13,7 +13,7 @@ def test_regressor_can_be_created_with_named_params():
         s=7.5,
         number_of_states=256,
         threshold=27,
-        number_of_clauses=30,
+        number_of_regressor_clauses=30,
         boost_true_positive_feedback=1,
         n_jobs=2,
         verbose=True,

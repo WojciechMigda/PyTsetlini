@@ -1,15 +1,19 @@
 # coding: utf-8
 
+import numpy as np
 from sklearn.base import (
     BaseEstimator, ClassifierMixin, RegressorMixin)
 from sklearn.utils.validation import (
     check_X_y, check_array, check_is_fitted, column_or_1d)
-from sklearn.utils.multiclass import check_classification_targets
-from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.multiclass import (
+    check_classification_targets)
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 
 from .base import (
     _validate_params, _classifier_fit, _classifier_partial_fit,
-    _classifier_predict, _classifier_predict_proba)
+    _classifier_predict, _classifier_predict_proba,
+    _regressor_fit,
+    _check_regression_targets)
 
 
 class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
@@ -252,7 +256,7 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
         The response values passed during :meth:`fit`.
     """
     def __init__(self,
-                 number_of_clauses=20,
+                 number_of_regressor_clauses=20,
                  number_of_states=100,
                  s=2.0,
                  threshold=15,
@@ -262,7 +266,7 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
                  n_jobs=-1,
                  verbose=False,
                  random_state=None):
-        self.number_of_clauses = number_of_clauses
+        self.number_of_regressor_clauses = number_of_regressor_clauses
         self.number_of_states = number_of_states
         self.s = s
         self.threshold = threshold
@@ -272,3 +276,47 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
         self.n_jobs = n_jobs
         self.verbose = verbose
         self.random_state = random_state
+
+    def fit(self, X, y, n_iter=500, y_range=None):
+        """A reference implementation of a fitting function for a regressor.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            The training input samples.
+        y : array-like, shape (n_samples,)
+            The target values. An array of floats.
+
+        Returns
+        -------
+        self : object
+            Returns self.
+        """
+        # Check that X and y have correct shape
+        X, y = check_X_y(X, y, force_all_finite=True)
+
+        checked_y = column_or_1d(y, warn=True)
+        _check_regression_targets(checked_y)
+
+        return self._fit(X, checked_y, y_range=y_range, n_iter=n_iter)
+
+    def _fit(self, X, y, y_range, n_iter):
+        n_iter = int(n_iter)
+        if n_iter <= 0:
+            raise ValueError("Number of iterations must be a positive"
+                             " integer but fit was called with"
+                             " n_iter: {}".format(n_iter))
+
+        self.set_params(**_validate_params(self.get_params()))
+
+        y_range = y_range or (0, self.threshold)
+        scaler = MinMaxScaler(feature_range=y_range).fit(y.reshape((-1, 1)))
+        y = np.clip(scaler.transform(y.reshape((-1, 1))).reshape(-1), 0, self.threshold)
+
+        self.model_ = _regressor_fit(
+            X, y, self.get_params(), n_iter)
+
+        self.scaler_ = scaler
+        self.n_features_ = X.shape[1]
+
+        return self

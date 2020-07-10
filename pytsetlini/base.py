@@ -1,6 +1,7 @@
 import json
 
 import scipy.sparse as sp
+from sklearn.utils.multiclass import type_of_target
 
 from . import libpytsetlini
 
@@ -19,6 +20,9 @@ def _validate_params(params):
             v = int(v)
             assert(v == -1 or v > 0)
         elif k == "number_of_pos_neg_clauses_per_label":
+            v = int(v)
+            assert(v > 0)
+        elif k == "number_regressor_clauses":
             v = int(v)
             assert(v > 0)
         elif k == "number_of_states":
@@ -42,6 +46,19 @@ def _validate_params(params):
         rv[k] = v
 
     return rv
+
+
+def _check_regression_targets(y):
+    """Ensure that target y is of a regression type.
+    Only the following target types (as defined in type_of_target) are allowed:
+        'continuous', 'binary', 'multiclass'
+    Parameters
+    ----------
+    y : array-like
+    """
+    y_type = type_of_target(y)
+    if y_type not in ['continuous', 'binary', 'multiclass']:
+        raise ValueError("Unknown response value type: %r" % y_type)
 
 
 def _params_as_json_bytes(params):
@@ -99,3 +116,20 @@ def _classifier_predict_proba(X, js_model, threshold):
         X, X_is_sparse, js_model, threshold)
 
     return probas
+
+
+def _regressor_fit(X, y, params, n_iter):
+    """
+    "number_of_features" will be derived from X and y
+    """
+
+    X_is_sparse = sp.issparse(X)
+    y_is_sparse = sp.issparse(y)
+
+    js_state = libpytsetlini.regressor_fit(
+        X, X_is_sparse,
+        y, y_is_sparse,
+        _params_as_json_bytes(params),
+        n_iter)
+
+    return js_state
