@@ -12,3 +12,4 @@ __version__ = '0.0.7'
 
 from .sklearn_estimator import TsetlinMachineClassifier
 from .sklearn_estimator import TsetlinMachineRegressor
+from .box_scaler import BoxScaler
