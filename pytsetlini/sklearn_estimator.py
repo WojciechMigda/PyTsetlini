@@ -7,7 +7,7 @@ from sklearn.utils.validation import (
     check_X_y, check_array, check_is_fitted, column_or_1d)
 from sklearn.utils.multiclass import (
     check_classification_targets)
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.preprocessing import LabelEncoder
 
 from .base import (
     _validate_params, _classifier_fit, _classifier_partial_fit,
@@ -15,6 +15,7 @@ from .base import (
     _regressor_fit, _regressor_predict, _regressor_partial_fit,
     _check_regression_targets)
 
+from .box_scaler import BoxScaler
 
 class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
     """Tsetlin Machine Multiclass classifier.
@@ -277,7 +278,7 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
         self.verbose = verbose
         self.random_state = random_state
 
-    def fit(self, X, y, n_iter=500, y_range=None):
+    def fit(self, X, y, n_iter=500, y_in_range=None, y_out_range=None):
         """A reference implementation of a fitting function for a regressor.
 
         Parameters
@@ -300,9 +301,10 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
             checked_y = checked_y.astype('float32')
         _check_regression_targets(checked_y)
 
-        return self._fit(X, checked_y, y_range=y_range, n_iter=n_iter)
+        return self._fit(X, checked_y, n_iter=n_iter,
+            y_in_range=y_in_range, y_out_range=y_out_range)
 
-    def _fit(self, X, y, y_range, n_iter):
+    def _fit(self, X, y, n_iter, y_in_range, y_out_range):
         n_iter = int(n_iter)
         if n_iter <= 0:
             raise ValueError("Number of iterations must be a positive"
@@ -311,9 +313,7 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
 
         self.set_params(**_validate_params(self.get_params()))
 
-        y_range = y_range or (0, self.threshold)
-        scaler = MinMaxScaler(feature_range=y_range).fit(y.reshape((-1, 1)))
-        y = np.clip(scaler.transform(y.reshape((-1, 1))).reshape(-1), 0, self.threshold)
+        y, scaler = self._normalize_y(y, y_in_range, y_out_range)
 
         self.model_ = _regressor_fit(
             X, y, self.get_params(), n_iter)
@@ -357,23 +357,21 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
                 self.n_features_, X.shape[1]))
         return X
 
-    def _partial_fit(self, X, y, y_range, n_iter):
+    def _partial_fit(self, X, y, y_in_range, y_out_range, n_iter):
         n_iter = int(n_iter)
         if n_iter <= 0:
             raise ValueError("Number of iterations must be a positive"
                              " integer but fit was called with"
                              " n_iter: {}".format(n_iter))
 
-        y_range = y_range or (0, self.threshold)
-        scaler = MinMaxScaler(feature_range=y_range).fit(y.reshape((-1, 1)))
-        y = np.clip(scaler.transform(y.reshape((-1, 1))).reshape(-1), 0, self.threshold)
+        y, scaler = self._normalize_y(y, y_in_range, y_out_range)
 
         self.model_ = _regressor_partial_fit(
             X, y, self.model_, n_iter)
 
         return self
 
-    def partial_fit(self, X, y, n_iter=500, y_range=None):
+    def partial_fit(self, X, y, n_iter=500, y_in_range=None, y_out_range=None):
         """Fit using existing state of the classifier for online-learning.
         Parameters
         ----------
@@ -396,13 +394,23 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
 
         # if not fitted:
         if not hasattr(self, 'model_'):
-            self._fit(X, y, n_iter=n_iter, y_range=y_range)
+            self._fit(X, y, n_iter=n_iter,
+                y_in_range=y_in_range, y_out_range=y_out_range)
         else:
             if X.shape[1] != self.n_features_:
                 raise ValueError("Number of features in X and"
                                  " fitted array does not match."
                                  " X: {}, fitted: {}".format(
                                     X.shape[1], self.n_features_))
-            self._partial_fit(X, y, n_iter=n_iter, y_range=y_range)
+            self._partial_fit(X, y, n_iter=n_iter,
+                y_in_range=y_in_range, y_out_range=y_out_range)
 
         return self
+
+    def _normalize_y(self, y, y_in_range, y_out_range):
+        y_out_range = y_out_range or (0, self.threshold)
+        scaler = BoxScaler(
+            in_feature_range=y_in_range,
+            out_feature_range=y_out_range).fit(y.reshape((-1, 1)))
+        y = np.clip(scaler.transform(y.reshape((-1, 1))).reshape(-1), 0, self.threshold)
+        return y, scaler
