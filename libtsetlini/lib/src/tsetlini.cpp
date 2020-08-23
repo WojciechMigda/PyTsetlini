@@ -1,8 +1,10 @@
 #define LOG_MODULE "tsetlini"
 #include "logger.hpp"
 
+#include "estimator_state_cache.hpp"
 #include "tsetlini_private.hpp"
-#include "tsetlini_algo.hpp"
+#include "tsetlini_algo_classic.hpp"
+#include "tsetlini_algo_common.hpp"
 
 #include "tsetlini_params.hpp"
 #include "tsetlini.hpp"
@@ -10,9 +12,9 @@
 #include "assume_aligned.hpp"
 #include "params_companion.hpp"
 #include "tsetlini_types.hpp"
-#include "tsetlini_state.hpp"
+#include "estimator_state.hpp"
 #include "tsetlini_status_code.hpp"
-#include "tsetlini_classifier_state_private.hpp"
+#include "tsetlini_estimator_state_private.hpp"
 
 #include "neither/either.hpp"
 
@@ -37,8 +39,22 @@ namespace
 
 
 template<typename T>
+bool check_all_0s_or_1s(aligned_vector<T> const & vec)
+{
+    return std::all_of(vec.cbegin(), vec.cend(), [](T v){ return v == 0 || v == 1; });
+}
+
+
+template<typename T>
+bool check_all_0s_or_1s(bit_vector<T> const & vec)
+{
+    return true;
+}
+
+
+template<typename RowType, typename T>
 status_message_t check_X_y(
-    std::vector<aligned_vector_char> const & X,
+    std::vector<RowType> const & X,
     std::vector<T> const & y)
 {
     if (X.empty())
@@ -62,12 +78,7 @@ status_message_t check_X_y(
         return {StatusCode::S_VALUE_ERROR,
             "All rows of X must have the same number of feature columns"};
     }
-    else if (not std::all_of(X.cbegin(), X.cend(),
-        [](auto const & row)
-        {
-            return std::all_of(
-                row.cbegin(), row.cend(), [](auto v){ return v == 0 || v == 1; });
-        }))
+    else if (not std::all_of(X.cbegin(), X.cend(), [](auto const & row){ return check_all_0s_or_1s(row); }))
     {
         return {StatusCode::S_VALUE_ERROR,
             "Only values of 0 and 1 can be used in X"};
@@ -127,19 +138,24 @@ label_vector_type unique_labels(label_vector_type const & y)
 }
 
 
-template<typename EstimatorStateT>
-bool is_fitted(EstimatorStateT const & state)
+bool is_fitted(TAState::value_type const & ta_state)
 {
-    return std::visit([](auto const & ta_state){ return ta_state.shape().first != 0; }, state.ta_state);
+    return std::visit([](auto const & ta_state_values){ return ta_state_values.shape().first != 0; }, ta_state.matrix);
 }
 
 
-template<typename EstimatorStateT>
-status_message_t check_for_predict(
-    EstimatorStateT const & state,
-    std::vector<aligned_vector_char> const & X)
+bool is_fitted(TAStateWithSignum::value_type const & ta_state)
 {
-    if (not is_fitted(state))
+    return std::visit([](auto const & ta_state_values){ return ta_state_values.shape().first != 0; }, ta_state.matrix);
+}
+
+
+template<typename EstimatorStateType, typename SampleType>
+status_message_t check_for_predict(
+    EstimatorStateType const & state,
+    std::vector<SampleType> const & X)
+{
+    if (not is_fitted(state.ta_state))
     {
         return {StatusCode::S_NOT_FITTED_ERROR,
             "This model instance is not fitted yet. Call fit or partial_fit before using this method"};
@@ -150,10 +166,10 @@ status_message_t check_for_predict(
     }
     else if (auto first = X.cbegin();
         not std::all_of(std::next(first), X.cend(),
-            [&first](auto const & row){ return row.size() == first->size(); }))
+            [&first](auto const & sample){ return sample.size() == first->size(); }))
     {
         return {StatusCode::S_VALUE_ERROR,
-            "All rows of X must have the same number of feature columns"};
+            "All samples in X must have the same number of feature columns"};
     }
     else if (X.front().size() - Params::number_of_features(state.m_params) != 0)
     {
@@ -161,12 +177,7 @@ status_message_t check_for_predict(
             "Predict called with X, which number of features " + std::to_string(X.front().size()) +
             " does not match that from prior fit " + std::to_string(Params::number_of_features(state.m_params))};
     }
-    else if (not std::all_of(X.cbegin(), X.cend(),
-        [](auto const & row)
-        {
-            return std::all_of(
-                row.cbegin(), row.cend(), [](auto v){ return v == 0 || v == 1; });
-        }))
+    else if (not std::all_of(X.cbegin(), X.cend(), [](auto const & sample){ return check_all_0s_or_1s(sample); }))
     {
         return {StatusCode::S_VALUE_ERROR,
             "Only values of 0 and 1 can be used in X"};
@@ -176,12 +187,12 @@ status_message_t check_for_predict(
 }
 
 
-template<typename EstimatorStateT>
+template<typename EstimatorStateType, typename SampleType>
 status_message_t check_for_predict(
-    EstimatorStateT const & state,
-    aligned_vector_char const & sample)
+    EstimatorStateType const & state,
+    SampleType const & sample)
 {
-    if (not is_fitted(state))
+    if (not is_fitted(state.ta_state))
     {
         return {StatusCode::S_NOT_FITTED_ERROR,
             "This model instance is not fitted yet. Call fit or partial_fit before using this method"};
@@ -192,7 +203,7 @@ status_message_t check_for_predict(
             "Predict called with sample, which size " + std::to_string(sample.size()) +
             " does not match number of features from prior fit " + std::to_string(Params::number_of_features(state.m_params))};
     }
-    else if (not std::all_of(sample.cbegin(), sample.cend(), [](auto v){ return v == 0 || v == 1; }))
+    else if (not check_all_0s_or_1s(sample))
     {
         return {StatusCode::S_VALUE_ERROR,
             "Only values of 0 and 1 can be used in sample for prediction"};
@@ -202,24 +213,24 @@ status_message_t check_for_predict(
 }
 
 
-template<typename state_type, typename row_type>
+template<typename SampleType, typename TAStateValueType>
 void classifier_update_impl(
-    row_type const & X,
+    SampleType const & X,
     label_type const target_label,
     label_type const opposite_label,
 
     int const number_of_pos_neg_clauses_per_label,
     int const threshold,
     int const number_of_clauses,
-    int const number_of_features,
     int const number_of_states,
     real_type s,
     int const boost_true_positive_feedback,
     int const n_jobs,
 
+    IRNG & igen,
     FRNG & fgen,
-    numeric_matrix<state_type> & ta_state,
-    ClassifierState::Cache & cache,
+    TAStateValueType & ta_state,
+    ClassifierStateCache::value_type & cache,
 
     int clause_output_tile_size
     )
@@ -232,7 +243,6 @@ void classifier_update_impl(
             cache.clause_output,
             output_ix_begin,
             output_ix_end,
-            number_of_features,
             ta_state,
             n_jobs,
             clause_output_tile_size
@@ -247,7 +257,6 @@ void classifier_update_impl(
             cache.clause_output,
             output_ix_begin,
             output_ix_end,
-            number_of_features,
             ta_state,
             n_jobs,
             clause_output_tile_size
@@ -280,8 +289,6 @@ void classifier_update_impl(
         threshold,
         fgen);
 
-    const auto S_inv = ONE / s;
-
     {
         auto const [input_ix_begin, input_ix_end] = clause_range_for_label(target_label, number_of_pos_neg_clauses_per_label);
 
@@ -291,13 +298,11 @@ void classifier_update_impl(
             input_ix_end,
             cache.feedback_to_clauses.data(),
             cache.clause_output.data(),
-            number_of_features,
             number_of_states,
-            S_inv,
-            X.data(),
+            X,
             boost_true_positive_feedback,
-            fgen,
-            cache.fcache
+            igen,
+            cache.ct
         );
     }
 
@@ -310,22 +315,21 @@ void classifier_update_impl(
             input_ix_end,
             cache.feedback_to_clauses.data(),
             cache.clause_output.data(),
-            number_of_features,
             number_of_states,
-            S_inv,
-            X.data(),
+            X,
             boost_true_positive_feedback,
-            fgen,
-            cache.fcache
+            igen,
+            cache.ct
         );
     }
 }
 
 
+template<typename ClassifierStateType, typename SampleType>
 Either<status_message_t, real_type>
-evaluate_impl(
-    ClassifierState const & state,
-    std::vector<aligned_vector_char> const & X,
+evaluate_classifier_impl(
+    ClassifierStateType const & state,
+    std::vector<SampleType> const & X,
     label_vector_type const & y)
 {
     // let it crash - no state validation for now
@@ -338,7 +342,6 @@ evaluate_impl(
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
     auto const number_of_clauses = Params::number_of_classifier_clauses(params);
-    auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
 
@@ -346,17 +349,13 @@ evaluate_impl(
 
     for (auto it = 0u; it < number_of_examples; ++it)
     {
-        std::visit([&](auto & ta_state)
-            {
-                calculate_clause_output_for_predict(
-                    X[it],
-                    state.cache.clause_output,
-                    number_of_clauses / 2,
-                    number_of_features,
-                    ta_state,
-                    n_jobs,
-                    clause_output_tile_size);
-            }, state.ta_state);
+        calculate_clause_output_for_predict(
+            X[it],
+            state.cache.clause_output,
+            number_of_clauses / 2,
+            state.ta_state,
+            n_jobs,
+            clause_output_tile_size);
 
         sum_up_all_label_votes(
             state.cache.clause_output,
@@ -379,8 +378,9 @@ evaluate_impl(
 }
 
 
+template<typename ClassifierStateType, typename SampleType>
 Either<status_message_t, label_type>
-predict_impl(ClassifierState const & state, aligned_vector_char const & sample)
+predict_classifier_impl(ClassifierStateType const & state, SampleType const & sample)
 {
     if (auto sm = check_for_predict(state, sample);
         sm.first != StatusCode::S_OK)
@@ -391,17 +391,13 @@ predict_impl(ClassifierState const & state, aligned_vector_char const & sample)
     auto const n_jobs = Params::n_jobs(state.m_params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(state.m_params);
 
-    std::visit([&](auto & ta_state)
-        {
-            calculate_clause_output_for_predict(
-                sample,
-                state.cache.clause_output,
-                Params::number_of_classifier_clauses(state.m_params) / 2,
-                Params::number_of_features(state.m_params),
-                ta_state,
-                n_jobs,
-                clause_output_tile_size);
-        }, state.ta_state);
+    calculate_clause_output_for_predict(
+        sample,
+        state.cache.clause_output,
+        Params::number_of_classifier_clauses(state.m_params) / 2,
+        state.ta_state,
+        n_jobs,
+        clause_output_tile_size);
 
     sum_up_all_label_votes(
         state.cache.clause_output,
@@ -418,8 +414,9 @@ predict_impl(ClassifierState const & state, aligned_vector_char const & sample)
 }
 
 
+template<typename RegressorStateType, typename SampleType>
 Either<status_message_t, response_type>
-predict_impl(RegressorState const & state, aligned_vector_char const & sample)
+predict_regressor_impl(RegressorStateType const & state, SampleType const & sample)
 {
     if (auto sm = check_for_predict(state, sample);
         sm.first != StatusCode::S_OK)
@@ -430,29 +427,23 @@ predict_impl(RegressorState const & state, aligned_vector_char const & sample)
     auto const n_jobs = Params::n_jobs(state.m_params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(state.m_params);
 
-    std::visit([&](auto & ta_state)
-        {
-            calculate_clause_output_for_predict(
-                sample,
-                state.cache.clause_output,
-                Params::number_of_classifier_clauses(state.m_params) / 2,
-                Params::number_of_features(state.m_params),
-                ta_state,
-                n_jobs,
-                clause_output_tile_size);
-        }, state.ta_state);
+    calculate_clause_output_for_predict(
+        sample,
+        state.cache.clause_output,
+        Params::number_of_classifier_clauses(state.m_params) / 2,
+        state.ta_state,
+        n_jobs,
+        clause_output_tile_size);
 
-    response_type rv = sum_up_regressor_votes(state.cache.clause_output, Params::threshold(state.m_params));
+    response_type rv = sum_up_regressor_votes(state.cache.clause_output, Params::threshold(state.m_params), state.ta_state.weights);
 
     return Either<status_message_t, label_type>::rightOf(rv);
 }
 
 
-} // anonymous
-
-
+template<typename ClassifierStateType, typename SampleType>
 Either<status_message_t, label_vector_type>
-predict_impl(ClassifierState const & state, std::vector<aligned_vector_char> const & X)
+predict_classifier_impl(ClassifierStateType const & state, std::vector<SampleType> const & X)
 {
     if (auto sm = check_for_predict(state, X);
         sm.first != StatusCode::S_OK)
@@ -470,7 +461,6 @@ predict_impl(ClassifierState const & state, std::vector<aligned_vector_char> con
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
     auto const number_of_clauses = Params::number_of_classifier_clauses(params);
-    auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
 
@@ -478,17 +468,13 @@ predict_impl(ClassifierState const & state, std::vector<aligned_vector_char> con
 
     for (auto it = 0u; it < number_of_examples; ++it)
     {
-        std::visit([&](auto & ta_state)
-            {
-                calculate_clause_output_for_predict(
-                    X[it],
-                    state.cache.clause_output,
-                    number_of_clauses / 2,
-                    number_of_features,
-                    ta_state,
-                    n_jobs,
-                    clause_output_tile_size);
-            }, state.ta_state);
+        calculate_clause_output_for_predict(
+            X[it],
+            state.cache.clause_output,
+            number_of_clauses / 2,
+            state.ta_state,
+            n_jobs,
+            clause_output_tile_size);
 
         sum_up_all_label_votes(
             state.cache.clause_output,
@@ -509,8 +495,9 @@ predict_impl(ClassifierState const & state, std::vector<aligned_vector_char> con
 }
 
 
+template<typename ClassifierStateType, typename SampleType>
 Either<status_message_t, aligned_vector_int>
-predict_raw_impl(ClassifierState const & state, aligned_vector_char const & sample)
+predict_classifier_raw_impl(ClassifierStateType const & state, SampleType const & sample)
 {
     if (auto sm = check_for_predict(state, sample);
         sm.first != StatusCode::S_OK)
@@ -526,22 +513,17 @@ predict_raw_impl(ClassifierState const & state, aligned_vector_char const & samp
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
     auto const number_of_clauses = Params::number_of_classifier_clauses(params);
-    auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
 
 
-    std::visit([&](auto & ta_state)
-        {
-            calculate_clause_output_for_predict(
-                sample,
-                state.cache.clause_output,
-                number_of_clauses / 2,
-                number_of_features,
-                ta_state,
-                n_jobs,
-                clause_output_tile_size);
-        }, state.ta_state);
+    calculate_clause_output_for_predict(
+        sample,
+        state.cache.clause_output,
+        number_of_clauses / 2,
+        state.ta_state,
+        n_jobs,
+        clause_output_tile_size);
 
     sum_up_all_label_votes(
         state.cache.clause_output,
@@ -554,8 +536,9 @@ predict_raw_impl(ClassifierState const & state, aligned_vector_char const & samp
 }
 
 
+template<typename ClassifierStateType, typename SampleType>
 Either<status_message_t, std::vector<aligned_vector_int>>
-predict_raw_impl(ClassifierState const & state, std::vector<aligned_vector_char> const & X)
+predict_classifier_raw_impl(ClassifierStateType const & state, std::vector<SampleType> const & X)
 {
     if (auto sm = check_for_predict(state, X);
         sm.first != StatusCode::S_OK)
@@ -573,7 +556,6 @@ predict_raw_impl(ClassifierState const & state, std::vector<aligned_vector_char>
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
     auto const number_of_clauses = Params::number_of_classifier_clauses(params);
-    auto const number_of_features = Params::number_of_features(params);
     auto const n_jobs = Params::n_jobs(params);
     auto const clause_output_tile_size = Params::clause_output_tile_size(params);
 
@@ -581,17 +563,13 @@ predict_raw_impl(ClassifierState const & state, std::vector<aligned_vector_char>
 
     for (auto it = 0u; it < number_of_examples; ++it)
     {
-        std::visit([&](auto & ta_state)
-            {
-                calculate_clause_output_for_predict(
-                    X[it],
-                    state.cache.clause_output,
-                    number_of_clauses / 2,
-                    number_of_features,
-                    ta_state,
-                    n_jobs,
-                    clause_output_tile_size);
-            }, state.ta_state);
+        calculate_clause_output_for_predict(
+            X[it],
+            state.cache.clause_output,
+            number_of_clauses / 2,
+            state.ta_state,
+            n_jobs,
+            clause_output_tile_size);
 
         sum_up_all_label_votes(
             state.cache.clause_output,
@@ -621,21 +599,15 @@ void generate_opposite_y(
 }
 
 
-template<typename state_type, typename row_type>
+template<typename ClassifierStateType, typename TAStateValueType, typename SampleType>
 status_message_t
-fit_online_impl(
-    ClassifierState & state,
-    numeric_matrix<state_type> & ta_state,
-    std::vector<row_type> const & X,
+fit_classifier_online_impl(
+    ClassifierStateType & state,
+    TAStateValueType & ta_state,
+    std::vector<SampleType> const & X,
     label_vector_type const & y,
     unsigned int epochs)
 {
-    if (auto sm = check_X_y(X, y);
-        sm.first != StatusCode::S_OK)
-    {
-        return sm;
-    }
-
     auto labels = unique_labels(y);
 
     auto const & params = state.m_params;
@@ -644,7 +616,6 @@ fit_online_impl(
     auto const number_of_pos_neg_clauses_per_label = Params::number_of_pos_neg_clauses_per_label(params);
     auto const threshold = Params::threshold(params);
     auto const number_of_clauses = Params::number_of_classifier_clauses(params);
-    auto const number_of_features = Params::number_of_features(params);
     auto const number_of_states = Params::number_of_states(params);
     auto const s = Params::s(params);
     auto const boost_true_positive_feedback = Params::boost_true_positive_feedback(params);
@@ -673,6 +644,8 @@ fit_online_impl(
         std::iota(ix.begin(), ix.end(), 0);
         std::shuffle(ix.begin(), ix.end(), state.igen);
 
+        state.cache.ct.populate(s, state.igen);
+
         for (auto i = 0u; i < number_of_examples; ++i)
         {
             classifier_update_impl(
@@ -683,12 +656,12 @@ fit_online_impl(
                 number_of_pos_neg_clauses_per_label,
                 threshold,
                 number_of_clauses,
-                number_of_features,
                 number_of_states,
                 s,
                 boost_true_positive_feedback,
                 n_jobs,
 
+                state.igen,
                 state.fgen,
                 ta_state,
                 state.cache,
@@ -702,36 +675,15 @@ fit_online_impl(
 }
 
 
-template<typename RowType>
+template<typename ClassifierStateType, typename SampleType>
 status_message_t
-fit_online_impl(
-    ClassifierState & state,
-    std::vector<RowType> const & X,
-    label_vector_type const & y,
-    unsigned int epochs)
-{
-    return std::visit([&](auto & ta_state)
-        {
-            return fit_online_impl(state, ta_state, X, y, epochs);
-        }, state.ta_state);
-}
-
-
-template<typename RowType>
-status_message_t
-fit_impl_T(
-    ClassifierState & state,
-    std::vector<RowType> const & X,
+fit_classifier_impl_T(
+    ClassifierStateType & state,
+    std::vector<SampleType> const & X,
     label_vector_type const & y,
     int max_number_of_labels,
     unsigned int epochs)
 {
-    if (auto sm = check_X_y(X, y);
-        sm.first != StatusCode::S_OK)
-    {
-        return sm;
-    }
-
     auto labels = unique_labels(y);
 
     int const number_of_labels = std::max(
@@ -754,29 +706,282 @@ fit_impl_T(
 
     initialize_state(state);
 
-    return fit_online_impl(state, X, y, epochs);
+    return fit_classifier_online_impl(state, state.ta_state, X, y, epochs);
+}
+
+
+template<typename ClassifierStateType, typename SampleType>
+status_message_t
+fit_classifier_impl(
+    ClassifierStateType & state,
+    std::vector<SampleType> const & X,
+    label_vector_type const & y,
+    int max_number_of_labels,
+    unsigned int epochs)
+{
+    if (auto sm = check_X_y(X, y);
+        sm.first != StatusCode::S_OK)
+    {
+        return sm;
+    }
+
+    return fit_classifier_impl_T(state, X, y, max_number_of_labels, epochs);
+}
+
+
+template<typename SampleType, typename TAStateValueType>
+void regressor_update_impl(
+    SampleType const & X,
+    response_type const target_response,
+
+    int const threshold,
+    int const number_of_clauses,
+    int const number_of_states,
+    real_type s,
+    int const boost_true_positive_feedback,
+    int const n_jobs,
+
+    IRNG & igen,
+    FRNG & fgen,
+    TAStateValueType & ta_state,
+    RegressorStateCache::value_type & cache,
+
+    int clause_output_tile_size
+    )
+{
+    calculate_clause_output(
+        X,
+        cache.clause_output,
+        0,
+        number_of_clauses / 2,
+        ta_state,
+        n_jobs,
+        clause_output_tile_size
+    );
+
+    auto const votes = sum_up_regressor_votes(cache.clause_output, threshold, ta_state.weights);
+    int const response_error = votes - target_response;
+
+    train_regressor_automata(
+        ta_state,
+        0,
+        number_of_clauses / 2,
+        cache.clause_output.data(),
+        number_of_states,
+        response_error,
+        X,
+        boost_true_positive_feedback,
+        igen,
+        threshold,
+        cache.ct
+    );
+}
+
+
+template<typename RegressorStateType, typename TAStateValueType, typename SampleType>
+status_message_t
+fit_regressor_online_impl(
+    RegressorStateType & state,
+    TAStateValueType & ta_state,
+    std::vector<SampleType> const & X,
+    response_vector_type const & y,
+    unsigned int epochs)
+{
+    auto const & params = state.m_params;
+
+    auto const number_of_clauses = Params::number_of_regressor_clauses(params);
+    auto const threshold = Params::threshold(params);
+    auto const number_of_states = Params::number_of_states(params);
+    auto const s = Params::s(params);
+    auto const boost_true_positive_feedback = Params::boost_true_positive_feedback(params);
+    auto const clause_output_tile_size = Params::clause_output_tile_size(params);
+    auto const n_jobs = Params::n_jobs(params);
+    auto const verbose = Params::verbose(params);
+
+    if (auto sm = check_response_y(y, threshold);
+        sm.first != StatusCode::S_OK)
+    {
+        return sm;
+    }
+
+    auto const number_of_examples = X.size();
+
+    std::vector<int> ix(number_of_examples);
+
+    for (unsigned int epoch = 0; epoch < epochs; ++epoch)
+    {
+        LOG(info) << "Epoch " << epoch + 1 << '\n';
+
+        std::iota(ix.begin(), ix.end(), 0);
+        std::shuffle(ix.begin(), ix.end(), state.igen);
+
+        state.cache.ct.populate(s, state.igen);
+
+        for (auto i = 0u; i < number_of_examples; ++i)
+        {
+            regressor_update_impl(
+                X[ix[i]],
+                y[ix[i]],
+
+                threshold,
+                number_of_clauses,
+                number_of_states,
+                s,
+                boost_true_positive_feedback,
+                n_jobs,
+
+                state.igen,
+                state.fgen,
+                ta_state,
+                state.cache,
+
+                clause_output_tile_size
+            );
+        }
+    }
+
+    return {S_OK, ""};
+}
+
+
+template<typename RegressorStateType, typename SampleType>
+status_message_t
+fit_regressor_impl_T(
+    RegressorStateType & state,
+    std::vector<SampleType> const & X,
+    response_vector_type const & y,
+    unsigned int epochs)
+{
+    if (auto sm = check_response_y(y, Params::threshold(state.m_params));
+        sm.first != StatusCode::S_OK)
+    {
+        return sm;
+    }
+
+    // Let it crash for now
+//    validate_params();
+
+    int const number_of_features = X.front().size();
+    state.m_params["number_of_features"] = param_value_t(number_of_features);
+
+    initialize_state(state);
+
+    return fit_regressor_online_impl(state, state.ta_state, X, y, epochs);
+}
+
+
+template<typename RegressorStateType, typename SampleType>
+status_message_t
+fit_regressor_impl(
+    RegressorStateType & state,
+    std::vector<SampleType> const & X,
+    response_vector_type const & y,
+    unsigned int epochs)
+{
+    if (auto sm = check_X_y(X, y);
+        sm.first != StatusCode::S_OK)
+    {
+        return sm;
+    }
+
+    return fit_regressor_impl_T(state, X, y, epochs);
+}
+
+
+template<typename RegressorStateType, typename SampleType>
+Either<status_message_t, response_vector_type>
+predict_regressor_impl(RegressorStateType const & state, std::vector<SampleType> const & X)
+{
+    if (auto sm = check_for_predict(state, X);
+        sm.first != StatusCode::S_OK)
+    {
+        return Either<status_message_t, response_vector_type>::leftOf(std::move(sm));
+    }
+
+    // let it crash - no state validation for now
+
+    auto const number_of_examples = X.size();
+
+    auto const & params = state.m_params;
+
+    auto const threshold = Params::threshold(params);
+    auto const number_of_clauses = Params::number_of_regressor_clauses(params);
+    auto const n_jobs = Params::n_jobs(params);
+    auto const clause_output_tile_size = Params::clause_output_tile_size(params);
+
+    response_vector_type rv(number_of_examples);
+
+    for (auto it = 0u; it < number_of_examples; ++it)
+    {
+        calculate_clause_output_for_predict(
+            X[it],
+            state.cache.clause_output,
+            number_of_clauses / 2,
+            state.ta_state,
+            n_jobs,
+            clause_output_tile_size);
+
+        auto const votes = sum_up_regressor_votes(state.cache.clause_output, threshold, state.ta_state.weights);
+
+        rv[it] = votes;
+    }
+
+    return Either<status_message_t, response_vector_type>::rightOf(rv);
+}
+
+
+} // anonymous
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+
+Either<status_message_t, label_vector_type>
+predict_impl(ClassifierStateClassic const & state, std::vector<aligned_vector_char> const & X)
+{
+    return predict_classifier_impl(state, X);
+}
+
+
+Either<status_message_t, aligned_vector_int>
+predict_raw_impl(ClassifierStateClassic const & state, aligned_vector_char const & sample)
+{
+    return predict_classifier_raw_impl(state, sample);
+}
+
+
+Either<status_message_t, std::vector<aligned_vector_int>>
+predict_raw_impl(ClassifierStateClassic const & state, std::vector<aligned_vector_char> const & X)
+{
+    return predict_classifier_raw_impl(state, X);
 }
 
 
 status_message_t
 partial_fit_impl(
-    ClassifierState & state,
+    ClassifierStateClassic & state,
     std::vector<aligned_vector_char> const & X,
     label_vector_type const & y,
     int max_number_of_labels,
     unsigned int epochs)
 {
-    if (is_fitted(state))
+    if (is_fitted(state.ta_state))
     {
-        return fit_online_impl(state, X, y, epochs);
+        if (auto sm = check_X_y(X, y);
+            sm.first != StatusCode::S_OK)
+        {
+            return sm;
+        }
+
+        return fit_classifier_online_impl(state, state.ta_state, X, y, epochs);
     }
     else
     {
         return fit_impl(state, X, y, max_number_of_labels, epochs);
     }
 }
-
-
 
 
 ClassifierClassic::ClassifierClassic(params_t const & params) :
@@ -791,9 +996,16 @@ ClassifierClassic::ClassifierClassic(params_t && params) :
 }
 
 
-ClassifierClassic::ClassifierClassic(ClassifierState const & state) :
+ClassifierClassic::ClassifierClassic(ClassifierStateClassic const & state) :
     m_state(state)
 {
+}
+
+
+Either<status_message_t, label_type>
+predict_impl(ClassifierStateClassic const & state, aligned_vector_char const & sample)
+{
+    return predict_classifier_impl(state, sample);
 }
 
 
@@ -814,7 +1026,7 @@ ClassifierClassic::predict(std::vector<aligned_vector_char> const & X) const
 Either<status_message_t, aligned_vector_int>
 ClassifierClassic::predict_raw(aligned_vector_char const & sample) const
 {
-    return predict_raw_impl(m_state, sample);
+    return predict_classifier_raw_impl(m_state, sample);
 }
 
 
@@ -822,6 +1034,16 @@ Either<status_message_t, std::vector<aligned_vector_int>>
 ClassifierClassic::predict_raw(std::vector<aligned_vector_char> const & X) const
 {
     return predict_raw_impl(m_state, X);
+}
+
+
+Either<status_message_t, real_type>
+evaluate_impl(
+    ClassifierStateClassic const & state,
+    std::vector<aligned_vector_char> const & X,
+    label_vector_type const & y)
+{
+    return evaluate_classifier_impl(state, X, y);
 }
 
 
@@ -848,13 +1070,13 @@ ClassifierClassic::fit(std::vector<aligned_vector_char> const & X, label_vector_
 
 status_message_t
 fit_impl(
-    ClassifierState & state,
+    ClassifierStateClassic & state,
     std::vector<aligned_vector_char> const & X,
     label_vector_type const & y,
     int max_number_of_labels,
     unsigned int epochs)
 {
-    return fit_impl_T(state, X, y, max_number_of_labels, epochs);
+    return fit_classifier_impl(state, X, y, max_number_of_labels, epochs);
 }
 
 
@@ -864,7 +1086,7 @@ params_t ClassifierClassic::read_params() const
 }
 
 
-ClassifierState ClassifierClassic::read_state() const
+ClassifierStateClassic ClassifierClassic::read_state() const
 {
     return m_state;
 }
@@ -897,7 +1119,7 @@ RegressorClassic::RegressorClassic(params_t && params) :
 }
 
 
-RegressorClassic::RegressorClassic(RegressorState const & state) :
+RegressorClassic::RegressorClassic(RegressorStateClassic const & state) :
     m_state(state)
 {
 }
@@ -922,162 +1144,22 @@ RegressorClassic::fit(std::vector<aligned_vector_char> const & X, response_vecto
 }
 
 
-template<typename state_type, typename row_type>
-void regressor_update_impl(
-    row_type const & X,
-    response_type const target_response,
-
-    int const threshold,
-    int const number_of_clauses,
-    int const number_of_features,
-    int const number_of_states,
-    real_type s,
-    int const boost_true_positive_feedback,
-    int const n_jobs,
-
-    FRNG & fgen,
-    numeric_matrix<state_type> & ta_state,
-    RegressorState::Cache & cache,
-
-    int clause_output_tile_size
-    )
-{
-    calculate_clause_output(
-        X,
-        cache.clause_output,
-        0,
-        number_of_clauses / 2,
-        number_of_features,
-        ta_state,
-        n_jobs,
-        clause_output_tile_size
-    );
-
-    auto const votes = sum_up_regressor_votes(cache.clause_output, threshold);
-    int const response_error = votes - target_response;
-
-    calculate_regressor_feedback_to_clauses(
-        cache.feedback_to_clauses,
-        response_error,
-        threshold,
-        fgen);
-
-    const auto S_inv = ONE / s;
-
-    train_regressor_automata(
-        ta_state,
-        0,
-        number_of_clauses / 2,
-        cache.feedback_to_clauses.data(),
-        cache.clause_output.data(),
-        number_of_features,
-        number_of_states,
-        S_inv,
-        response_error,
-        X.data(),
-        boost_true_positive_feedback,
-        fgen,
-        cache.fcache
-    );
-}
-
-
-template<typename state_type, typename row_type>
-status_message_t
-fit_online_impl(
-    RegressorState & state,
-    numeric_matrix<state_type> & ta_state,
-    std::vector<row_type> const & X,
-    response_vector_type const & y,
-    unsigned int epochs)
-{
-    if (auto sm = check_X_y(X, y);
-        sm.first != StatusCode::S_OK)
-    {
-        return sm;
-    }
-
-    auto const & params = state.m_params;
-
-    auto const number_of_clauses = Params::number_of_regressor_clauses(params);
-    auto const threshold = Params::threshold(params);
-    auto const number_of_features = Params::number_of_features(params);
-    auto const number_of_states = Params::number_of_states(params);
-    auto const s = Params::s(params);
-    auto const boost_true_positive_feedback = Params::boost_true_positive_feedback(params);
-    auto const clause_output_tile_size = Params::clause_output_tile_size(params);
-    auto const n_jobs = Params::n_jobs(params);
-    auto const verbose = Params::verbose(params);
-
-    if (auto sm = check_response_y(y, threshold);
-        sm.first != StatusCode::S_OK)
-    {
-        return sm;
-    }
-
-    auto const number_of_examples = X.size();
-
-    std::vector<int> ix(number_of_examples);
-
-    for (unsigned int epoch = 0; epoch < epochs; ++epoch)
-    {
-        LOG(info) << "Epoch " << epoch + 1 << '\n';
-
-        std::iota(ix.begin(), ix.end(), 0);
-        std::shuffle(ix.begin(), ix.end(), state.igen);
-
-        for (auto i = 0u; i < number_of_examples; ++i)
-        {
-            regressor_update_impl(
-                X[ix[i]],
-                y[ix[i]],
-
-                threshold,
-                number_of_clauses,
-                number_of_features,
-                number_of_states,
-                s,
-                boost_true_positive_feedback,
-                n_jobs,
-
-                state.fgen,
-                ta_state,
-                state.cache,
-
-                clause_output_tile_size
-            );
-        }
-    }
-
-    return {S_OK, ""};
-}
-
-
-template<typename RowType>
-status_message_t
-fit_online_impl(
-    RegressorState & state,
-    std::vector<RowType> const & X,
-    response_vector_type const & y,
-    unsigned int epochs)
-{
-    return std::visit([&](auto & ta_state)
-        {
-            return fit_online_impl(state, ta_state, X, y, epochs);
-        }, state.ta_state);
-}
-
-
 status_message_t
 partial_fit_impl(
-    RegressorState & state,
+    RegressorStateClassic & state,
     std::vector<aligned_vector_char> const & X,
     response_vector_type const & y,
     unsigned int epochs)
 {
-    if (is_fitted(state))
+    if (is_fitted(state.ta_state))
     {
-        return fit_online_impl(state, X, y, epochs);
+        if (auto sm = check_X_y(X, y);
+            sm.first != StatusCode::S_OK)
+        {
+            return sm;
+        }
+
+        return fit_regressor_online_impl(state, state.ta_state, X, y, epochs);
     }
     else
     {
@@ -1086,46 +1168,14 @@ partial_fit_impl(
 }
 
 
-template<typename RowType>
-status_message_t
-fit_impl_T(
-    RegressorState & state,
-    std::vector<RowType> const & X,
-    response_vector_type const & y,
-    unsigned int epochs)
-{
-    if (auto sm = check_X_y(X, y);
-        sm.first != StatusCode::S_OK)
-    {
-        return sm;
-    }
-
-    if (auto sm = check_response_y(y, Params::threshold(state.m_params));
-        sm.first != StatusCode::S_OK)
-    {
-        return sm;
-    }
-
-    // Let it crash for now
-//    validate_params();
-
-    int const number_of_features = X.front().size();
-    state.m_params["number_of_features"] = param_value_t(number_of_features);
-
-    initialize_state(state);
-
-    return fit_online_impl(state, X, y, epochs);
-}
-
-
 status_message_t
 fit_impl(
-    RegressorState & state,
+    RegressorStateClassic & state,
     std::vector<aligned_vector_char> const & X,
     response_vector_type const & y,
     unsigned int epochs)
 {
-    return fit_impl_T(state, X, y, epochs);
+    return fit_regressor_impl(state, X, y, epochs);
 }
 
 
@@ -1137,48 +1187,9 @@ RegressorClassic::partial_fit(std::vector<aligned_vector_char> const & X, respon
 
 
 Either<status_message_t, response_vector_type>
-predict_impl(RegressorState const & state, std::vector<aligned_vector_char> const & X)
+predict_impl(RegressorStateClassic const & state, std::vector<aligned_vector_char> const & X)
 {
-    if (auto sm = check_for_predict(state, X);
-        sm.first != StatusCode::S_OK)
-    {
-        return Either<status_message_t, response_vector_type>::leftOf(std::move(sm));
-    }
-
-    // let it crash - no state validation for now
-
-    auto const number_of_examples = X.size();
-
-    auto const & params = state.m_params;
-
-    auto const threshold = Params::threshold(params);
-    auto const number_of_clauses = Params::number_of_regressor_clauses(params);
-    auto const number_of_features = Params::number_of_features(params);
-    auto const n_jobs = Params::n_jobs(params);
-    auto const clause_output_tile_size = Params::clause_output_tile_size(params);
-
-    response_vector_type rv(number_of_examples);
-
-    for (auto it = 0u; it < number_of_examples; ++it)
-    {
-        std::visit([&](auto & ta_state)
-            {
-                calculate_clause_output_for_predict(
-                    X[it],
-                    state.cache.clause_output,
-                    number_of_clauses / 2,
-                    number_of_features,
-                    ta_state,
-                    n_jobs,
-                    clause_output_tile_size);
-            }, state.ta_state);
-
-        auto const votes = sum_up_regressor_votes(state.cache.clause_output, threshold);
-
-        rv[it] = votes;
-    }
-
-    return Either<status_message_t, response_vector_type>::rightOf(rv);
+    return predict_regressor_impl(state, X);
 }
 
 
@@ -1186,6 +1197,13 @@ Either<status_message_t, response_vector_type>
 RegressorClassic::predict(std::vector<aligned_vector_char> const & X) const
 {
     return predict_impl(m_state, X);
+}
+
+
+Either<status_message_t, response_type>
+predict_impl(RegressorStateClassic const & state, aligned_vector_char const & sample)
+{
+    return predict_regressor_impl(state, sample);
 }
 
 
@@ -1202,9 +1220,300 @@ params_t RegressorClassic::read_params() const
 }
 
 
-RegressorState RegressorClassic::read_state() const
+RegressorStateClassic RegressorClassic::read_state() const
 {
     return m_state;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+status_message_t
+fit_impl(
+    ClassifierStateBitwise & state,
+    std::vector<bit_vector_uint64> const & X,
+    label_vector_type const & y,
+    int max_number_of_labels,
+    unsigned int epochs)
+{
+    return fit_classifier_impl(state, X, y, max_number_of_labels, epochs);
+}
+
+
+status_message_t
+ClassifierBitwise::fit(std::vector<bit_vector_uint64> const & X, label_vector_type const & y, int max_number_of_labels, unsigned int epochs)
+{
+    return fit_impl(m_state, X, y, max_number_of_labels, epochs);
+}
+
+
+status_message_t
+partial_fit_impl(
+    ClassifierStateBitwise & state,
+    std::vector<bit_vector_uint64> const & X,
+    label_vector_type const & y,
+    int max_number_of_labels,
+    unsigned int epochs)
+{
+    if (is_fitted(state.ta_state))
+    {
+        if (auto sm = check_X_y(X, y);
+            sm.first != StatusCode::S_OK)
+        {
+            return sm;
+        }
+
+        return fit_classifier_online_impl(state, state.ta_state, X, y, epochs);
+    }
+    else
+    {
+        return fit_impl(state, X, y, max_number_of_labels, epochs);
+    }
+}
+
+
+status_message_t
+ClassifierBitwise::partial_fit(std::vector<bit_vector_uint64> const & X, label_vector_type const & y, int max_number_of_labels, unsigned int epochs)
+{
+    return partial_fit_impl(m_state, X, y, max_number_of_labels, epochs);
+}
+
+
+Either<status_message_t, label_type>
+predict_impl(ClassifierStateBitwise const & state, bit_vector_uint64 const & sample)
+{
+    return predict_classifier_impl(state, sample);
+}
+
+
+Either<status_message_t, label_type>
+ClassifierBitwise::predict(bit_vector_uint64 const & sample) const
+{
+    return predict_impl(m_state, sample);
+}
+
+
+Either<status_message_t, label_vector_type>
+predict_impl(ClassifierStateBitwise const & state, std::vector<bit_vector_uint64> const & X)
+{
+    return predict_classifier_impl(state, X);
+}
+
+
+Either<status_message_t, label_vector_type>
+ClassifierBitwise::predict(std::vector<bit_vector_uint64> const & X) const
+{
+    return predict_impl(m_state, X);
+}
+
+
+Either<status_message_t, aligned_vector_int>
+predict_raw_impl(ClassifierStateBitwise const & state, bit_vector_uint64 const & sample)
+{
+    return predict_classifier_raw_impl(state, sample);
+}
+
+
+Either<status_message_t, aligned_vector_int>
+ClassifierBitwise::predict_raw(bit_vector_uint64 const & sample) const
+{
+    return predict_raw_impl(m_state, sample);
+}
+
+
+Either<status_message_t, std::vector<aligned_vector_int>>
+predict_raw_impl(ClassifierStateBitwise const & state, std::vector<bit_vector_uint64> const & X)
+{
+    return predict_classifier_raw_impl(state, X);
+}
+
+
+Either<status_message_t, std::vector<aligned_vector_int>>
+ClassifierBitwise::predict_raw(std::vector<bit_vector_uint64> const & X) const
+{
+    return predict_raw_impl(m_state, X);
+}
+
+
+params_t ClassifierBitwise::read_params() const
+{
+    return m_state.m_params;
+}
+
+
+ClassifierStateBitwise ClassifierBitwise::read_state() const
+{
+    return m_state;
+}
+
+
+ClassifierBitwise::ClassifierBitwise(ClassifierStateBitwise const & state) :
+    m_state(state)
+{
+}
+
+
+Either<status_message_t, ClassifierBitwise>
+make_classifier_bitwise(std::string const & json_params)
+{
+    auto rv =
+        make_classifier_params_from_json(json_params)
+        .rightMap([](params_t && params){ return ClassifierBitwise(params); })
+        ;
+
+    return rv;
+}
+
+
+ClassifierBitwise::ClassifierBitwise(params_t const & params) :
+    m_state(params)
+{
+}
+
+
+ClassifierBitwise::ClassifierBitwise(params_t && params) :
+    m_state(params)
+{
+}
+
+
+Either<status_message_t, real_type>
+evaluate_impl(
+    ClassifierStateBitwise const & state,
+    std::vector<bit_vector_uint64> const & X,
+    label_vector_type const & y)
+{
+    return evaluate_classifier_impl(state, X, y);
+}
+
+
+Either<status_message_t, real_type>
+ClassifierBitwise::evaluate(std::vector<bit_vector_uint64> const & X, label_vector_type const & y) const
+{
+    return evaluate_impl(m_state, X, y);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+status_message_t
+fit_impl(
+    RegressorStateBitwise & state,
+    std::vector<bit_vector_uint64> const & X,
+    response_vector_type const & y,
+    unsigned int epochs)
+{
+    return fit_regressor_impl(state, X, y, epochs);
+}
+
+
+status_message_t
+RegressorBitwise::fit(std::vector<bit_vector_uint64> const & X, response_vector_type const & y, unsigned int epochs)
+{
+    return fit_impl(m_state, X, y, epochs);
+}
+
+
+status_message_t
+partial_fit_impl(
+    RegressorStateBitwise & state,
+    std::vector<bit_vector_uint64> const & X,
+    response_vector_type const & y,
+    unsigned int epochs)
+{
+    if (is_fitted(state.ta_state))
+    {
+        if (auto sm = check_X_y(X, y);
+            sm.first != StatusCode::S_OK)
+        {
+            return sm;
+        }
+
+        return fit_regressor_online_impl(state, state.ta_state, X, y, epochs);
+    }
+    else
+    {
+        return fit_impl(state, X, y, epochs);
+    }
+}
+
+
+status_message_t
+RegressorBitwise::partial_fit(std::vector<bit_vector_uint64> const & X, response_vector_type const & y, unsigned int epochs)
+{
+    return partial_fit_impl(m_state, X, y, epochs);
+}
+
+
+Either<status_message_t, response_type>
+predict_impl(RegressorStateBitwise const & state, bit_vector_uint64 const & sample)
+{
+    return predict_regressor_impl(state, sample);
+}
+
+
+Either<status_message_t, response_type>
+RegressorBitwise::predict(bit_vector_uint64 const & sample) const
+{
+    return predict_impl(m_state, sample);
+}
+
+
+Either<status_message_t, response_vector_type>
+predict_impl(RegressorStateBitwise const & state, std::vector<bit_vector_uint64> const & X)
+{
+    return predict_regressor_impl(state, X);
+}
+
+
+Either<status_message_t, response_vector_type>
+RegressorBitwise::predict(std::vector<bit_vector_uint64> const & X) const
+{
+    return predict_impl(m_state, X);
+}
+
+
+params_t RegressorBitwise::read_params() const
+{
+    return m_state.m_params;
+}
+
+
+RegressorStateBitwise RegressorBitwise::read_state() const
+{
+    return m_state;
+}
+
+
+RegressorBitwise::RegressorBitwise(RegressorStateBitwise const & state) :
+    m_state(state)
+{
+}
+
+
+Either<status_message_t, RegressorBitwise>
+make_regressor_bitwise(std::string const & json_params)
+{
+    auto rv =
+        make_regressor_params_from_json(json_params)
+        .rightMap([](params_t && params){ return RegressorBitwise(params); })
+        ;
+
+    return rv;
+}
+
+
+RegressorBitwise::RegressorBitwise(params_t const & params) :
+    m_state(params)
+{
+}
+
+
+RegressorBitwise::RegressorBitwise(params_t && params) :
+    m_state(params)
+{
 }
 
 

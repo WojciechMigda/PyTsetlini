@@ -62,7 +62,7 @@ class BuildExtension(BuildExt):
             "-DCMAKE_BUILD_TYPE=" + build_type,
             "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + CLIB_DIR,
             "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=" + CLIB_DIR,
-            "-DCMAKE_CXX_FLAGS='-Wall -Werror -march=native'",
+            "-DCMAKE_CXX_FLAGS='-Wall -Werror -march=native -DTSETLINI_USE_OMP=1'",
         ]
         os.chdir(str(build_temp))
 

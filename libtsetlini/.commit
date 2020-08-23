@@ -1,8 +1,5 @@
-commit 68c0a0d6ea661d6dce4b7c2b51459b22e2372b41
-Merge: e1eb094 0bb9a5f
-Author: WojciechMigda <WojciechMigda@users.noreply.github.com>
-Date:   Fri Jul 10 00:51:35 2020 +0200
+commit bba0b7b492336afd47d3328c80bcaa4bc40ccf74
+Author: Wojciech Migda <wojtek.golf@interia.pl>
+Date:   Sun Aug 23 23:05:13 2020 +0200
 
-    Merge pull request #52 from WojciechMigda/regressor-missing-api
-    
-    Add missing regressor api, needed for PyTsetlini
+    Embed estimator and algo types into jsonized state

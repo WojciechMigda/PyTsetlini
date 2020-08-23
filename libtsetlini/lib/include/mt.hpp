@@ -23,6 +23,9 @@
 
 #pragma once
 
+#ifndef LIB_INCLUDE_MT_HPP_
+#define LIB_INCLUDE_MT_HPP_
+
 #include "likely.h"
 #include "assume_aligned.hpp"
 #include "is_power_of_two.hpp"
@@ -31,6 +34,7 @@
 #include <cstddef>
 #include <limits>
 #include <algorithm>
+#include <cstring>
 
 
 template<typename ValueType, unsigned int Alignment, unsigned int NumberOfStreams, typename DerivedT>
@@ -89,6 +93,7 @@ struct BasePRNG
             MT[i] = (1812433253UL * (MT[i - NS] ^ (MT[i - NS] >> 30)) + i / NS);
         }
         index = 0;
+        memset(aRES, 0, sizeof (aRES));
     }
 
     void generate()
@@ -184,7 +189,7 @@ struct BasePRNG
         return rand();
     }
 
-    BasePRNG const & operator=(BasePRNG const & other)
+    BasePRNG & operator=(BasePRNG const & other)
     {
         if (this != &other)
         {
@@ -276,3 +281,6 @@ struct basic_FRNG : public BasePRNG<float, Alignment, NumberOfStreams, basic_FRN
 };
 
 using FRNG = basic_FRNG<64, 8>;
+
+
+#endif /* LIB_INCLUDE_MT_HPP_ */

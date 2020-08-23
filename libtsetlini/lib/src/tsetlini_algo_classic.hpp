@@ -1,27 +1,24 @@
 #pragma once
 
-#include "tsetlini_state.hpp"
+#ifndef LIB_SRC_TSETLINI_ALGO_CLASSIC_HPP_
+#define LIB_SRC_TSETLINI_ALGO_CLASSIC_HPP_
+
+#include "estimator_state.hpp"
+#include "estimator_state_cache.hpp"
 #include "tsetlini_types.hpp"
+
+
+#ifndef TSETLINI_USE_OMP
+#define TSETLINI_USE_OMP 1
+#endif
+
 
 namespace Tsetlini
 {
 
+
 namespace
 {
-
-
-inline
-int pos_feat_index(int k)
-{
-    return k;
-}
-
-
-inline
-int neg_feat_index(int k, int number_of_features)
-{
-    return k + number_of_features;
-}
 
 
 template<typename state_type>
@@ -29,20 +26,6 @@ inline
 bool action(state_type state)
 {
     return state >= 0;
-}
-
-
-inline
-int pos_clause_index(int target_label, int j, int number_of_pos_neg_clauses_per_label)
-{
-    return 2 * target_label * number_of_pos_neg_clauses_per_label + j;
-}
-
-
-inline
-int neg_clause_index(int target_label, int j, int number_of_pos_neg_clauses_per_label)
-{
-    return pos_clause_index(target_label, j, number_of_pos_neg_clauses_per_label) + number_of_pos_neg_clauses_per_label;
 }
 
 
@@ -117,21 +100,26 @@ void sum_up_all_label_votes(
     }
 }
 
-
-template<typename state_type, unsigned int BATCH_SZ>
+/*
+ * https://godbolt.org/z/bxh1rY
+ */
+template<unsigned int BATCH_SZ, typename state_type>
 inline
 void calculate_clause_output_for_predict_T(
     aligned_vector_char const & X,
     aligned_vector_char & clause_output,
     int const number_of_clauses,
-    int const number_of_features,
     numeric_matrix<state_type> const & ta_state,
     int const n_jobs)
 {
+    int const number_of_features = X.size();
     char const * X_p = assume_aligned<alignment>(X.data());
 
     if (number_of_features < (int)BATCH_SZ)
     {
+#if TSETLINI_USE_OMP == 1
+#pragma omp parallel for if (n_jobs > 1) num_threads(n_jobs)
+#endif
         for (int oidx = 0; oidx < number_of_clauses; ++oidx)
         {
             bool output = true;
@@ -157,7 +145,9 @@ void calculate_clause_output_for_predict_T(
     }
     else
     {
+#if TSETLINI_USE_OMP == 1
 #pragma omp parallel for if (n_jobs > 1) num_threads(n_jobs)
+#endif
         for (int oidx = 0; oidx < number_of_clauses; ++oidx)
         {
             char toggle_output = 0;
@@ -203,81 +193,50 @@ void calculate_clause_output_for_predict_T(
 }
 
 
-template<typename state_type>
+template<unsigned int BATCH_SZ>
 inline
-void calculate_clause_output_for_predict(
+void calculate_clause_output_for_predict_T(
     aligned_vector_char const & X,
     aligned_vector_char & clause_output,
     int const number_of_clauses,
-    int const number_of_features,
-    numeric_matrix<state_type> const & ta_state,
-    int const n_jobs,
-    int const TILE_SZ)
+    TAState::value_type const & ta_state,
+    int const n_jobs)
 {
-    switch (TILE_SZ)
-    {
-        case 128:
-            calculate_clause_output_for_predict_T<state_type, 128>(
+    std::visit(
+        [&](auto & ta_state_values)
+        {
+            calculate_clause_output_for_predict_T<BATCH_SZ>(
                 X,
                 clause_output,
                 number_of_clauses,
-                number_of_features,
-                ta_state,
+                ta_state_values,
                 n_jobs
             );
-            break;
-        case 64:
-            calculate_clause_output_for_predict_T<state_type, 64>(
-                X,
-                clause_output,
-                number_of_clauses,
-                number_of_features,
-                ta_state,
-                n_jobs
-            );
-            break;
-        case 32:
-            calculate_clause_output_for_predict_T<state_type, 32>(
-                X,
-                clause_output,
-                number_of_clauses,
-                number_of_features,
-                ta_state,
-                n_jobs
-            );
-            break;
-        default:
-//            LOG_(warn) << "calculate_clause_output_for_predict: unrecognized clause_output_tile_size value "
-//                       << clause_output_tile_size << ", fallback to 16.\n";
-        case 16:
-            calculate_clause_output_for_predict_T<state_type, 16>(
-                X,
-                clause_output,
-                number_of_clauses,
-                number_of_features,
-                ta_state,
-                n_jobs
-            );
-            break;
-    }
+        },
+        ta_state.matrix);
 }
 
-
-template<typename state_type, unsigned int BATCH_SZ>
+/*
+ * https://godbolt.org/z/5xhafK
+ */
+template<unsigned int BATCH_SZ, typename state_type>
 inline
 void calculate_clause_output_T(
     aligned_vector_char const & X,
     aligned_vector_char & clause_output,
     int const output_begin_ix,
     int const output_end_ix,
-    int const number_of_features,
     numeric_matrix<state_type> const & ta_state,
     int const n_jobs)
 {
+    int const number_of_features = X.size();
     char const * X_p = assume_aligned<alignment>(X.data());
 
     if (number_of_features < (int)BATCH_SZ)
     {
+#if TSETLINI_USE_OMP == 1
+#pragma omp parallel for if (n_jobs > 1) num_threads(n_jobs)
+#endif
         for (int oidx = output_begin_ix; oidx < output_end_ix; ++oidx)
         {
             bool output = true;
@@ -298,7 +257,9 @@ void calculate_clause_output_T(
     }
     else
     {
+#if TSETLINI_USE_OMP == 1
 #pragma omp parallel for if (n_jobs > 1) num_threads(n_jobs)
+#endif
         for (int oidx = output_begin_ix; oidx < output_end_ix; ++oidx)
         {
             char toggle_output = 0;
@@ -336,195 +297,194 @@ void calculate_clause_output_T(
     }
 }
 
-/**
- * @param X
- *      Vector of 0s and 1s, with size equal to @c number_of_features .
- *
- * @param clause_output
- *      Output vector of 0s and 1s, with size equal to @c number_of_clauses .
- *
- * @param number_of_clauses
- *      Positive integer equal to size of @c clause_output .
- *
- * @param number_of_features
- *      Positive integer equal to size of @c X .
- *
- * @param ta_state
- *      @c numeric_matrix with 2 * @c number_of_clauses rows and
- *      @c number_of_features columns.
- *
- * @param n_jobs
- *      Number of parallel jobs.
- *
- * @param TILE_SZ
- *      Positive integer {16, 32, 64, 128} that specifies batch size of
- *      data processed in @c X .
- */
-template<typename state_type, typename RowType>
+
+template<unsigned int BATCH_SZ>
 inline
-void calculate_clause_output(
-    RowType const & X,
+void calculate_clause_output_T(
+    aligned_vector_char const & X,
     aligned_vector_char & clause_output,
     int const output_begin_ix,
     int const output_end_ix,
-    int const number_of_features,
-    numeric_matrix<state_type> const & ta_state,
-    int const n_jobs,
-    int const TILE_SZ)
+    TAState::value_type const & ta_state,
+    int const n_jobs)
 {
-    switch (TILE_SZ)
-    {
-        case 128:
-            calculate_clause_output_T<state_type, 128>(
+    std::visit(
+        [&](auto & ta_state_values)
+        {
+            calculate_clause_output_T<BATCH_SZ>(
                 X,
                 clause_output,
                 output_begin_ix,
                 output_end_ix,
-                number_of_features,
-                ta_state,
+                ta_state_values,
                 n_jobs
             );
-            break;
-        case 64:
-            calculate_clause_output_T<state_type, 64>(
-                X,
-                clause_output,
-                output_begin_ix,
-                output_end_ix,
-                number_of_features,
-                ta_state,
-                n_jobs
-            );
-            break;
-        case 32:
-            calculate_clause_output_T<state_type, 32>(
-                X,
-                clause_output,
-                output_begin_ix,
-                output_end_ix,
-                number_of_features,
-                ta_state,
-                n_jobs
-            );
-            break;
-        default:
-//            LOG_(warn) << "calculate_clause_output: unrecognized clause_output_tile_size value "
-//                       << clause_output_tile_size << ", fallback to 16.\n";
-        case 16:
-            calculate_clause_output_T<state_type, 16>(
-                X,
-                clause_output,
-                output_begin_ix,
-                output_end_ix,
-                number_of_features,
-                ta_state,
-                n_jobs
-            );
-            break;
-    }
+        },
+        ta_state.matrix);
 }
 
 
-// Feedback Type I, negative
+/*
+ * Feedback Type I, negative
+ *
+ * https://godbolt.org/z/GdjvPG
+ */
 template<typename state_type>
-int block1(
+void block1(
     int const number_of_features,
     int const number_of_states,
-    float const S_inv,
     state_type * __restrict ta_state_pos_j,
     state_type * __restrict ta_state_neg_j,
-    float const * __restrict fcache,
-    int fcache_pos
+    char const * __restrict ct_pos, // __restrict does not quite hold here with CoinTosser
+    char const * __restrict ct_neg
 )
 {
-    fcache = assume_aligned<alignment>(fcache);
     ta_state_pos_j = assume_aligned<alignment>(ta_state_pos_j);
     ta_state_neg_j = assume_aligned<alignment>(ta_state_neg_j);
 
-    for (int k = 0; k < number_of_features; ++k)
-    {
-        {
-            auto cond = fcache[fcache_pos++] <= S_inv;
+    ct_pos = assume_aligned<alignment>(ct_pos);
+    ct_neg = assume_aligned<alignment>(ct_neg);
 
-            ta_state_pos_j[k] = cond ? (ta_state_pos_j[k] > -number_of_states ? ta_state_pos_j[k] - 1 : ta_state_pos_j[k]) : ta_state_pos_j[k];
+    for (int fidx = 0; fidx < number_of_features; ++fidx)
+    {
+        // This is nicely vectorized by gcc
+        {
+            auto cond = ct_pos[fidx];
+
+            ta_state_pos_j[fidx] = UNLIKELY(cond) ? (ta_state_pos_j[fidx] > -number_of_states ? ta_state_pos_j[fidx] - 1 : ta_state_pos_j[fidx]) : ta_state_pos_j[fidx];
         }
 
         {
-            auto cond = fcache[fcache_pos++] <= S_inv;
+            auto cond = ct_neg[fidx];
 
-            ta_state_neg_j[k] = cond ? (ta_state_neg_j[k] > -number_of_states ? ta_state_neg_j[k] - 1 : ta_state_neg_j[k]) : ta_state_neg_j[k];
+            ta_state_neg_j[fidx] = UNLIKELY(cond) ? (ta_state_neg_j[fidx] > -number_of_states ? ta_state_neg_j[fidx] - 1 : ta_state_neg_j[fidx]) : ta_state_neg_j[fidx];
         }
     }
-    return fcache_pos;
 }
 
 
-// Feedback Type I, positive
+/*
+ * Feedback Type I, positive
+ *
+ * https://godbolt.org/z/97r1h7
+ */
 template<bool boost_true_positive_feedback, typename state_type>
-int block2(
+void block2(
     int const number_of_features,
     int const number_of_states,
-    float const S_inv,
     state_type * __restrict ta_state_pos_j,
     state_type * __restrict ta_state_neg_j,
     char const * __restrict X,
-    float const * __restrict fcache,
-    int fcache_pos
+    char const * __restrict ct_pos,
+    char const * __restrict ct_neg
 )
 {
-    constexpr float ONE = 1.0f;
-    fcache = assume_aligned<alignment>(fcache);
     ta_state_pos_j = assume_aligned<alignment>(ta_state_pos_j);
     ta_state_neg_j = assume_aligned<alignment>(ta_state_neg_j);
-//    X = assume_aligned(X);
 
-    for (int k = 0; k < number_of_features; ++k)
+    ct_pos = assume_aligned<alignment>(ct_pos);
+    ct_neg = assume_aligned<alignment>(ct_neg);
+
+    X = assume_aligned<alignment>(X);
+
+    for (int fidx = 0; fidx < number_of_features; ++fidx)
     {
-        auto cond1 = boost_true_positive_feedback == true or (fcache[fcache_pos++] <= (ONE - S_inv));
-        auto cond2 = fcache[fcache_pos++] <= S_inv;
+        auto cond1_pos = boost_true_positive_feedback == true or not ct_pos[fidx];
+        auto cond2_pos = ct_pos[fidx];
 
-        if (X[k] != 0)
+        auto cond1_neg = boost_true_positive_feedback == true or not ct_neg[fidx];
+        auto cond2_neg = ct_neg[fidx];
+
+#if 0
+        auto cond = X[fidx];
+        ta_state_pos_j[fidx] = cond
+            ? (cond1_pos
+                ? (ta_state_pos_j[fidx] < number_of_states - 1
+                    ? ta_state_pos_j[fidx] + 1
+                    : ta_state_pos_j[fidx])
+                : ta_state_pos_j[fidx])
+            : (cond2_pos
+                ? (ta_state_pos_j[fidx] > -number_of_states
+                    ? ta_state_pos_j[fidx] - 1
+                    : ta_state_pos_j[fidx])
+                : ta_state_pos_j[fidx])
+            ;
+
+        ta_state_neg_j[fidx] = cond
+            ? (cond2_neg
+                ? (ta_state_neg_j[fidx] > -number_of_states
+                    ? ta_state_neg_j[fidx] - 1
+                    : ta_state_neg_j[fidx])
+                : ta_state_neg_j[fidx])
+            : (cond1_neg ?
+                (ta_state_neg_j[fidx] < number_of_states - 1
+                    ? ta_state_neg_j[fidx] + 1
+                    : ta_state_neg_j[fidx])
+                : ta_state_neg_j[fidx])
+            ;
+#endif
+
+        // This is nicely vectorized by gcc
+        auto Xcond_1 = X[fidx];
+        auto Xcond_0 = !X[fidx];
+
+        auto cond_pos_inc = ta_state_pos_j[fidx] < number_of_states - 1;
+        auto cond_pos_dec = ta_state_pos_j[fidx] > -number_of_states;
+
+        auto cond_neg_inc = ta_state_neg_j[fidx] < number_of_states - 1;
+        auto cond_neg_dec = ta_state_neg_j[fidx] > -number_of_states;
+
+        ta_state_pos_j[fidx] = Xcond_1 & cond1_pos & cond_pos_inc ? ta_state_pos_j[fidx] + 1 : ta_state_pos_j[fidx];
+        ta_state_neg_j[fidx] = Xcond_1 & cond2_neg & cond_neg_dec ? ta_state_neg_j[fidx] - 1 : ta_state_neg_j[fidx];
+        ta_state_pos_j[fidx] = Xcond_0 & cond2_pos & cond_pos_dec ? ta_state_pos_j[fidx] - 1 : ta_state_pos_j[fidx];
+        ta_state_neg_j[fidx] = Xcond_0 & cond1_neg & cond_neg_inc ? ta_state_neg_j[fidx] + 1 : ta_state_neg_j[fidx];
+
+#if 0
+        if (X[fidx] != 0)
         {
-            if (cond1)
+            if (LIKELY(cond1_pos))
             {
-                if (ta_state_pos_j[k] < number_of_states - 1)
+                if (ta_state_pos_j[fidx] < number_of_states - 1)
                 {
-                    ta_state_pos_j[k]++;
+                    ta_state_pos_j[fidx]++;
                 }
             }
-            if (cond2)
+            if (UNLIKELY(cond2_neg))
             {
-                if (ta_state_neg_j[k] > -number_of_states)
+                if (ta_state_neg_j[fidx] > -number_of_states)
                 {
-                    ta_state_neg_j[k]--;
+                    ta_state_neg_j[fidx]--;
                 }
             }
         }
         else // if (X[k] == 0)
         {
-            if (cond1)
+            if (LIKELY(cond1_neg))
             {
-                if (ta_state_neg_j[k] < number_of_states - 1)
+                if (ta_state_neg_j[fidx] < number_of_states - 1)
                 {
-                    ta_state_neg_j[k]++;
+                    ta_state_neg_j[fidx]++;
                 }
             }
 
-            if (cond2)
+            if (UNLIKELY(cond2_pos))
             {
-                if (ta_state_pos_j[k] > -number_of_states)
+                if (ta_state_pos_j[fidx] > -number_of_states)
                 {
-                    ta_state_pos_j[k]--;
+                    ta_state_pos_j[fidx]--;
                 }
             }
         }
+#endif
     }
-
-    return fcache_pos;
 }
 
 
-// Feedback Type II
+/*
+ * Feedback Type II
+ *
+ * https://godbolt.org/z/WTa4vK
+ */
 template<typename state_type>
 void block3(
     int const number_of_features,
@@ -537,25 +497,41 @@ void block3(
     ta_state_neg_j = assume_aligned<alignment>(ta_state_neg_j);
     X = assume_aligned<alignment>(X);
 
-    for (int k = 0; k < number_of_features; ++k)
+    // this is nicely vectorized by gcc
+    for (int fidx = 0; fidx < number_of_features; ++fidx)
     {
-        if (X[k] == 0)
+        //auto X_cond_0 = !X[fidx]; // gcc 7.5 vectorizes with this construct,
+                                    // newer gcc needs construct below
+        auto X_cond_0 = X[fidx] ^ 1;
+        auto X_cond_1 = X[fidx];
+        auto X_pos_inc = ta_state_pos_j[fidx] < 0;
+        auto X_neg_inc = ta_state_neg_j[fidx] < 0;
+
+        ta_state_pos_j[fidx] = X_cond_0 & X_pos_inc ? ta_state_pos_j[fidx] + 1 : ta_state_pos_j[fidx];
+        ta_state_neg_j[fidx] = X_cond_1 & X_neg_inc ? ta_state_neg_j[fidx] + 1 : ta_state_neg_j[fidx];
+    }
+
+#if 0
+    for (int fidx = 0; fidx < number_of_features; ++fidx)
+    {
+        if (X[fidx] == 0)
         {
-            auto action_include = (ta_state_pos_j[k] >= 0);
+            auto action_include = (ta_state_pos_j[fidx] >= 0);
             if (action_include == false)
             {
-                ta_state_pos_j[k]++;
+                ta_state_pos_j[fidx]++;
             }
         }
         else //if(X[k] == 1)
         {
-            auto action_include_negated = (ta_state_neg_j[k] >= 0);
+            auto action_include_negated = (ta_state_neg_j[fidx] >= 0);
             if (action_include_negated == false)
             {
-                ta_state_neg_j[k]++;
+                ta_state_neg_j[fidx]++;
             }
         }
     }
+#endif
 }
 
 
@@ -566,16 +542,14 @@ void train_classifier_automata(
     int const input_end_ix,
     feedback_vector_type::value_type const * __restrict feedback_to_clauses,
     char const * __restrict clause_output,
-    int const number_of_features,
     int const number_of_states,
-    float const S_inv,
-    char const * __restrict X,
+    aligned_vector_char const & X,
     bool const boost_true_positive_feedback,
-    FRNG & frng,
-    ClassifierState::frand_cache_type & fcache
+    IRNG & prng,
+    EstimatorStateCacheBase::coin_tosser_type & ct
     )
 {
-    float const * fcache_ = assume_aligned<alignment>(fcache.m_fcache.data());
+    int const number_of_features = X.size();
 
     for (int iidx = input_begin_ix; iidx < input_end_ix; ++iidx)
     {
@@ -586,28 +560,63 @@ void train_classifier_automata(
         {
             if (clause_output[iidx] == 0)
             {
-                fcache.refill(frng);
-
-                fcache.m_pos = block1(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, fcache_, fcache.m_pos);
+                block1(number_of_features, number_of_states, ta_state_pos_j, ta_state_neg_j, ct.tosses1(prng), ct.tosses2(prng));
             }
             else // if (clause_output[iidx] == 1)
             {
-                fcache.refill(frng);
-
                 if (boost_true_positive_feedback)
-                    fcache.m_pos = block2<true>(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, X, fcache_, fcache.m_pos);
+                {
+                    block2<true>(number_of_features, number_of_states, ta_state_pos_j, ta_state_neg_j, X.data(), ct.tosses1(prng), ct.tosses2(prng));
+                }
                 else
-                    fcache.m_pos = block2<false>(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, X, fcache_, fcache.m_pos);
+                {
+                    block2<false>(number_of_features, number_of_states, ta_state_pos_j, ta_state_neg_j, X.data(), ct.tosses1(prng), ct.tosses2(prng));
+                }
             }
         }
         else if (feedback_to_clauses[iidx] < 0)
         {
             if (clause_output[iidx] == 1)
             {
-                block3(number_of_features, ta_state_pos_j, ta_state_neg_j, X);
+                block3(number_of_features, ta_state_pos_j, ta_state_neg_j, X.data());
             }
         }
     }
+}
+
+
+inline
+void train_classifier_automata(
+    TAState::value_type & ta_state,
+    int const input_begin_ix,
+    int const input_end_ix,
+    feedback_vector_type::value_type const * __restrict feedback_to_clauses,
+    char const * __restrict clause_output,
+    int const number_of_states,
+    aligned_vector_char const & X,
+    bool const boost_true_positive_feedback,
+    IRNG & prng,
+    EstimatorStateCacheBase::coin_tosser_type & ct
+    )
+{
+    std::visit(
+        [&](auto & ta_state_values)
+        {
+            train_classifier_automata(
+                ta_state_values,
+                input_begin_ix,
+                input_end_ix,
+                feedback_to_clauses,
+                clause_output,
+                number_of_states,
+                X,
+                boost_true_positive_feedback,
+                prng,
+                ct
+            );
+        },
+        ta_state.matrix
+    );
 }
 
 
@@ -664,9 +673,25 @@ void calculate_classifier_feedback_to_clauses(
 inline
 response_type sum_up_regressor_votes(
     aligned_vector_char const & clause_output,
-    int const threshold)
+    int const threshold,
+    w_vector_type const & weights)
 {
-    auto const sum = std::accumulate(clause_output.cbegin(), clause_output.cend(), 0);
+    auto accumulate_weighted = [](auto const & clause_output, auto const & weights)
+    {
+        int acc = 0;
+
+        for (auto ix = 0u; ix < clause_output.size(); ++ix)
+        {
+            acc += clause_output[ix] * (weights[ix] + 1);
+        }
+
+        return acc;
+    };
+
+    auto const sum = weights.size() == 0 ?
+        std::accumulate(clause_output.cbegin(), clause_output.cend(), 0)
+        :
+        accumulate_weighted(clause_output, weights);
 
     return std::clamp(sum, 0, threshold);
 }
@@ -689,61 +714,111 @@ void calculate_regressor_feedback_to_clauses(
 template<typename state_type>
 void train_regressor_automata(
     numeric_matrix<state_type> & ta_state,
+    w_vector_type & weights,
     int const input_begin_ix,
     int const input_end_ix,
-    feedback_vector_type::value_type const * __restrict feedback_to_clauses,
     char const * __restrict clause_output,
-    int const number_of_features,
     int const number_of_states,
-    float const S_inv,
     int const response_error,
-    char const * __restrict X,
+    aligned_vector_char const & X,
     bool const boost_true_positive_feedback,
-    FRNG & frng,
-    ClassifierState::frand_cache_type & fcache
+    IRNG & prng,
+    unsigned int const threshold,
+    EstimatorStateCacheBase::coin_tosser_type & ct
     )
 {
-    float const * fcache_ = assume_aligned<alignment>(fcache.m_fcache.data());
+    int const number_of_features = X.size();
+    int const feedback_hits = std::round((input_end_ix - input_begin_ix) *
+        static_cast<real_type>(response_error) * response_error / (threshold * threshold));
 
-    for (int iidx = input_begin_ix; iidx < input_end_ix; ++iidx)
+    for (int idx = 0; idx < feedback_hits; ++idx)
     {
+        // randomly pick index that corresponds to non-zero feedback
+        auto const iidx = prng() % (input_end_ix - input_begin_ix) + input_begin_ix;
+
         state_type * ta_state_pos_j = ::assume_aligned<alignment>(ta_state.row_data(2 * iidx + 0));
         state_type * ta_state_neg_j = ::assume_aligned<alignment>(ta_state.row_data(2 * iidx + 1));
-
-        if (feedback_to_clauses[iidx] == 0)
-        {
-            continue;
-        }
 
         if (response_error < 0)
         {
             if (clause_output[iidx] == 0)
             {
-                fcache.refill(frng);
-
-                fcache.m_pos = block1(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, fcache_, fcache.m_pos);
+                block1(number_of_features, number_of_states, ta_state_pos_j, ta_state_neg_j, ct.tosses1(prng), ct.tosses2(prng));
             }
             else // if (clause_output[iidx] == 1)
             {
-                fcache.refill(frng);
-
                 if (boost_true_positive_feedback)
-                    fcache.m_pos = block2<true>(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, X, fcache_, fcache.m_pos);
+                {
+                    block2<true>(number_of_features, number_of_states, ta_state_pos_j, ta_state_neg_j, X.data(), ct.tosses1(prng), ct.tosses2(prng));
+                }
                 else
-                    fcache.m_pos = block2<false>(number_of_features, number_of_states, S_inv, ta_state_pos_j, ta_state_neg_j, X, fcache_, fcache.m_pos);
+                {
+                    block2<false>(number_of_features, number_of_states, ta_state_pos_j, ta_state_neg_j, X.data(), ct.tosses1(prng), ct.tosses2(prng));
+                }
+
+                if (weights.size() != 0)
+                {
+                    weights[iidx]++;
+                }
             }
         }
         else if (response_error > 0)
         {
-            if (clause_output[iidx] == 1)
+            if (clause_output[iidx] != 0)
             {
-                block3(number_of_features, ta_state_pos_j, ta_state_neg_j, X);
+                block3(number_of_features, ta_state_pos_j, ta_state_neg_j, X.data());
+
+                if (weights.size() != 0)
+                {
+                    weights[iidx] -= (weights[iidx] != 0);
+                }
             }
         }
     }
 }
 
 
+inline
+void train_regressor_automata(
+    TAState::value_type & ta_state,
+    int const input_begin_ix,
+    int const input_end_ix,
+    char const * __restrict clause_output,
+    int const number_of_states,
+    int const response_error,
+    aligned_vector_char const & X,
+    bool const boost_true_positive_feedback,
+    IRNG & prng,
+    unsigned int const threshold,
+    EstimatorStateCacheBase::coin_tosser_type & ct
+    )
+{
+    std::visit(
+        [&](auto & ta_state_values)
+        {
+            train_regressor_automata(
+                ta_state_values,
+                ta_state.weights,
+                input_begin_ix,
+                input_end_ix,
+                clause_output,
+                number_of_states,
+                response_error,
+                X,
+                boost_true_positive_feedback,
+                prng,
+                threshold,
+                ct
+            );
+        },
+        ta_state.matrix
+    );
 }
 
+
+} // anonymous namespace
+
+
 } // namespace Tsetlini
+
+#endif /* LIB_SRC_TSETLINI_ALGO_CLASSIC_HPP_ */
