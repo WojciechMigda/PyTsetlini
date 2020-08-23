@@ -11,7 +11,8 @@ cimport numpy as np
 from pytsetlini.either cimport Either
 
 from pytsetlini.tsetlini_status_code cimport status_message_t
-from pytsetlini.tsetlini_classifier_state cimport ClassifierState
+from pytsetlini.tsetlini_estimator_state cimport (
+    ClassifierStateClassic, RegressorStateClassic)
 from pytsetlini.tsetlini_types cimport (aligned_vector_char, label_vector_type,
     label_type, aligned_vector_int, response_vector_type, response_type)
 from pytsetlini.tsetlini_state_json cimport to_json_string
@@ -69,7 +70,7 @@ cdef extern from "tsetlini_private.hpp":
 {
     return
     Tsetlini::make_classifier_params_from_json(params)
-        .rightMap([](auto && params){ return Tsetlini::ClassifierState(params); })
+        .rightMap([](auto && params){ return Tsetlini::ClassifierStateClassic(params); })
         .rightFlatMap([&X, &y, number_of_labels, n_epochs](auto && state)
         {
             auto status = Tsetlini::fit_impl(state, X, y, number_of_labels, n_epochs);
@@ -94,7 +95,7 @@ cdef extern from "tsetlini_private.hpp":
     cdef Either[status_message_t, string] train_classifier_partial_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::label_vector_type const & y, int n_epochs)
 {
-    Tsetlini::ClassifierState state(Tsetlini::params_t{});
+    Tsetlini::ClassifierStateClassic state(Tsetlini::params_t{});
 
     Tsetlini::from_json_string(state, js_model);
 
@@ -118,7 +119,7 @@ cdef extern from "tsetlini_private.hpp":
     cdef Either[status_message_t, label_vector_type] predict_classifier_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X)
 {
-    Tsetlini::ClassifierState state(Tsetlini::params_t{});
+    Tsetlini::ClassifierStateClassic state(Tsetlini::params_t{});
 
     Tsetlini::from_json_string(state, js_model);
 
@@ -131,7 +132,7 @@ cdef extern from "tsetlini_private.hpp":
     cdef Either[status_message_t, vector[aligned_vector_int]] predict_raw_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X)
 {
-    Tsetlini::ClassifierState state(Tsetlini::params_t{});
+    Tsetlini::ClassifierStateClassic state(Tsetlini::params_t{});
 
     Tsetlini::from_json_string(state, js_model);
 
@@ -281,7 +282,7 @@ cdef extern from "tsetlini_private.hpp":
 {
     return
     Tsetlini::make_regressor_params_from_json(params)
-        .rightMap([](auto && params){ return Tsetlini::RegressorState(params); })
+        .rightMap([](auto && params){ return Tsetlini::RegressorStateClassic(params); })
         .rightFlatMap([&X, &y, n_epochs](auto && state)
         {
             auto status = Tsetlini::fit_impl(state, X, y, n_epochs);
@@ -306,7 +307,7 @@ cdef extern from "tsetlini_private.hpp":
     cdef Either[status_message_t, string] train_regressor_partial_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::response_vector_type const & y, int n_epochs)
 {
-    Tsetlini::RegressorState state(Tsetlini::params_t{});
+    Tsetlini::RegressorStateClassic state(Tsetlini::params_t{});
 
     Tsetlini::from_json_string(state, js_model);
 
@@ -330,7 +331,7 @@ cdef extern from "tsetlini_private.hpp":
     cdef Either[status_message_t, response_vector_type] predict_regressor_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X)
 {
-    Tsetlini::RegressorState state(Tsetlini::params_t{});
+    Tsetlini::RegressorStateClassic state(Tsetlini::params_t{});
 
     Tsetlini::from_json_string(state, js_model);
 
@@ -343,7 +344,7 @@ cdef extern from "tsetlini_private.hpp":
     cdef Either[status_message_t, string] train_regressor_partial_lambda """
 [](std::string const & js_model, std::vector<Tsetlini::aligned_vector_char> const & X, Tsetlini::response_vector_type const & y, int n_epochs)
 {
-    Tsetlini::RegressorState state(Tsetlini::params_t{});
+    Tsetlini::RegressorStateClassic state(Tsetlini::params_t{});
 
     Tsetlini::from_json_string(state, js_model);
 

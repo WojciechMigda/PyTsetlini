@@ -36,6 +36,8 @@ def _validate_params(params):
             assert(v > 0)
         elif k == "verbose":
             v = bool(v)
+        elif k == "weighted":
+            v = bool(v)
         elif k == "counting_type":
             v = str(v)
             assert(v in ["auto", "int8", "int16", "int32"])

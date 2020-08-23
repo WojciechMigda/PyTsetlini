@@ -59,10 +59,10 @@ class TsetlinMachineClassifier(BaseEstimator, ClassifierMixin):
         The classes seen at :meth:`fit`.
     """
     def __init__(self,
-                 number_of_pos_neg_clauses_per_label=5,
+                 number_of_pos_neg_clauses_per_label=10,
                  number_of_states=100,
                  s=2.0,
-                 threshold=15,
+                 threshold=25,
                  boost_true_positive_feedback=0,
                  counting_type='auto',
                  clause_output_tile_size=16,
@@ -260,7 +260,7 @@ class TsetlinMachineRegressor(BaseEstimator, RegressorMixin):
                  number_of_regressor_clauses=100,
                  number_of_states=100,
                  s=2.0,
-                 threshold=50,
+                 threshold=500,
                  boost_true_positive_feedback=0,
                  counting_type='auto',
                  clause_output_tile_size=16,
