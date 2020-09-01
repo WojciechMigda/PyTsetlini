@@ -1,5 +1,8 @@
-commit bba0b7b492336afd47d3328c80bcaa4bc40ccf74
-Author: Wojciech Migda <wojtek.golf@interia.pl>
-Date:   Sun Aug 23 23:05:13 2020 +0200
+commit cc317f7358b3533d0e56ddb09b081b95f596d870
+Merge: ffdf5e3 b1f200c
+Author: WojciechMigda <WojciechMigda@users.noreply.github.com>
+Date:   Tue Sep 1 22:55:47 2020 +0200
 
-    Embed estimator and algo types into jsonized state
+    Merge pull request #91 from WojciechMigda/release-v0.0.9
+    
+    Release v0.0.9
